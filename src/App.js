@@ -29,6 +29,7 @@ const WritingPlatform = () => {
   const handLandmarkerRef = useRef(null);
   const animationFrameRef = useRef(null);
   const lastPosRef = useRef({ x: 0, y: 0 });
+  const [isErasing, setIsErasing] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -86,45 +87,116 @@ const WritingPlatform = () => {
       }
 
       const hand = results.landmarks[0];
-      const indexFinger = hand[8];
+
+      // Fingertip landmarks
+      const indexTip = hand[8];
+      const middleTip = hand[12];
+      const ringTip = hand[16];
+      const pinkyTip = hand[20];
+
+      // Middle joint landmarks
+      const indexMid = hand[7];
+      const middleMid = hand[11];
+      const ringMid = hand[15];
+      const pinkyMid = hand[19];
+
+      // Base joint landmarks
+      const indexBase = hand[5];
+      const middleBase = hand[9];
+      const ringBase = hand[13];
+      const pinkyBase = hand[17];
+
+      // For a fist, middle joints should be higher (smaller y) than both base and tips
+      const isFingerCurled = (tip, mid, base) => {
+        return mid.y < tip.y && mid.y < base.y;
+      };
+
+      const isFist =
+        isFingerCurled(indexTip, indexMid, indexBase) &&
+        isFingerCurled(middleTip, middleMid, middleBase) &&
+        isFingerCurled(ringTip, ringMid, ringBase) &&
+        isFingerCurled(pinkyTip, pinkyMid, pinkyBase);
+
+      // Calculate pinch between thumb and index finger
       const thumb = hand[4];
+      const pinchDistance = Math.sqrt(
+        Math.pow(thumb.x - indexTip.x, 2) +
+        Math.pow(thumb.y - indexTip.y, 2)
+      );
+
+      // Only allow pinch when not in fist position
+      const isPinched = pinchDistance < 0.08 && !isFist;
+
+      // Add debug visualization
+      if (cursorRef.current) {
+        const fingerStates = [
+          isFingerCurled(indexTip, indexMid, indexBase),
+          isFingerCurled(middleTip, middleMid, middleBase),
+          isFingerCurled(ringTip, ringMid, ringBase),
+          isFingerCurled(pinkyTip, pinkyMid, pinkyBase)
+        ];
+        cursorRef.current.setAttribute('data-gesture',
+          `Fist: ${isFist}, Fingers: ${fingerStates.map(f => f ? '✓' : '✗').join(' ')}`
+        );
+      }
 
       // Convert normalized coordinates to pixel coordinates
-      const x = (1 - indexFinger.x) * canvas.width;
-      const y = indexFinger.y * canvas.height;
+      const x = (1 - indexTip.x) * canvas.width;
+      const y = indexTip.y * canvas.height;
 
       // Apply simple smoothing
       const smoothedX = lastPosRef.current.x * 0.7 + x * 0.3;
       const smoothedY = lastPosRef.current.y * 0.7 + y * 0.3;
       lastPosRef.current = { x: smoothedX, y: smoothedY };
 
-      // Update cursor position
+      // Update cursor position and appearance
       if (cursorRef.current) {
         cursorRef.current.style.left = `${smoothedX}px`;
         cursorRef.current.style.top = `${smoothedY}px`;
 
-        // Calculate distance for pinch detection
-        const distance = Math.sqrt(
-          Math.pow(thumb.x - indexFinger.x, 2) +
-          Math.pow(thumb.y - indexFinger.y, 2)
-        );
+        // Update cursor appearance based on mode
+        if (isFist) {
+          cursorRef.current.style.backgroundColor = 'white';
+          cursorRef.current.style.border = '2px solid red';
+          cursorRef.current.style.width = '30px';
+          cursorRef.current.style.height = '30px';
+        } else {
+          cursorRef.current.style.backgroundColor = isPinched ? 'green' : 'red';
+          cursorRef.current.style.border = 'none';
+          cursorRef.current.style.width = '20px';
+          cursorRef.current.style.height = '20px';
+        }
 
-        const isPinched = distance < 0.08;
-        cursorRef.current.style.backgroundColor = isPinched ? 'green' : 'red';
-
-        // Drawing logic
-        if (isPinched) {
+        // Drawing/Erasing logic
+        if (isFist) {
+          // Eraser mode
           if (!isDrawingRef.current) {
             context.beginPath();
             context.moveTo(smoothedX, smoothedY);
             isDrawingRef.current = true;
           } else {
+            context.globalCompositeOperation = 'destination-out';
+            context.lineWidth = 30;
             context.lineTo(smoothedX, smoothedY);
             context.stroke();
           }
-        } else if (isDrawingRef.current) {
-          isDrawingRef.current = false;
-          context.closePath();
+        } else if (isPinched) {
+          // Drawing mode
+          if (!isDrawingRef.current) {
+            context.beginPath();
+            context.moveTo(smoothedX, smoothedY);
+            isDrawingRef.current = true;
+          } else {
+            context.globalCompositeOperation = 'source-over';
+            context.lineWidth = 8;
+            context.lineTo(smoothedX, smoothedY);
+            context.stroke();
+          }
+        } else {
+          if (isDrawingRef.current) {
+            isDrawingRef.current = false;
+            context.closePath();
+          }
         }
       }
 
@@ -159,6 +231,60 @@ const WritingPlatform = () => {
 
   return (
     <div className="writing-platform">
+      <div className="controls-container">
+        <button
+          onClick={clearCanvas}
+          style={{
+            padding: '12px 28px',
+            borderRadius: '30px',
+            background: 'linear-gradient(90deg, #4a90e2 0%, #357abd 100%)',
+            color: 'white',
+            fontWeight: 'bold',
+            fontSize: '1.1rem',
+            border: 'none',
+            boxShadow: '0 4px 16px rgba(74, 144, 226, 0.15)',
+            cursor: 'pointer',
+            transition: 'background 0.2s, box-shadow 0.2s',
+          }}
+          onMouseOver={e => {
+            e.currentTarget.style.background = 'linear-gradient(90deg, #357abd 0%, #4a90e2 100%)';
+            e.currentTarget.style.boxShadow = '0 6px 24px rgba(53, 122, 189, 0.18)';
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.background = 'linear-gradient(90deg, #4a90e2 0%, #357abd 100%)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(74, 144, 226, 0.15)';
+          }}
+        >
+          Clear Canvas
+        </button>
+        <Link
+          to="/"
+          style={{
+            padding: '12px 28px',
+            borderRadius: '30px',
+            background: 'linear-gradient(90deg, #2ecc71 0%, #27ae60 100%)',
+            color: 'white',
+            fontWeight: 'bold',
+            fontSize: '1.1rem',
+            border: 'none',
+            boxShadow: '0 4px 16px rgba(46, 204, 113, 0.15)',
+            cursor: 'pointer',
+            transition: 'background 0.2s, box-shadow 0.2s',
+            textDecoration: 'none',
+            display: 'inline-block',
+          }}
+          onMouseOver={e => {
+            e.currentTarget.style.background = 'linear-gradient(90deg, #27ae60 0%, #2ecc71 100%)';
+            e.currentTarget.style.boxShadow = '0 6px 24px rgba(39, 174, 96, 0.18)';
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.background = 'linear-gradient(90deg, #2ecc71 0%, #27ae60 100%)';
+            e.currentTarget.style.boxShadow = '0 4px 16px rgba(46, 204, 113, 0.15)';
+          }}
+        >
+          Return Home
+        </Link>
+      </div>
       <div className="whiteboard-container">
         <canvas
           ref={canvasRef}
@@ -179,60 +305,6 @@ const WritingPlatform = () => {
           width={800}
           height={600}
         />
-        <div className="button-container">
-          <button
-            onClick={clearCanvas}
-            style={{
-              padding: '12px 28px',
-              borderRadius: '30px',
-              background: 'linear-gradient(90deg, #4a90e2 0%, #357abd 100%)',
-              color: 'white',
-              fontWeight: 'bold',
-              fontSize: '1.1rem',
-              border: 'none',
-              boxShadow: '0 4px 16px rgba(74, 144, 226, 0.15)',
-              cursor: 'pointer',
-              transition: 'background 0.2s, box-shadow 0.2s',
-            }}
-            onMouseOver={e => {
-              e.currentTarget.style.background = 'linear-gradient(90deg, #357abd 0%, #4a90e2 100%)';
-              e.currentTarget.style.boxShadow = '0 6px 24px rgba(53, 122, 189, 0.18)';
-            }}
-            onMouseOut={e => {
-              e.currentTarget.style.background = 'linear-gradient(90deg, #4a90e2 0%, #357abd 100%)';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(74, 144, 226, 0.15)';
-            }}
-          >
-            Clear Canvas
-          </button>
-          <Link
-            to="/"
-            style={{
-              padding: '12px 28px',
-              borderRadius: '30px',
-              background: 'linear-gradient(90deg, #2ecc71 0%, #27ae60 100%)',
-              color: 'white',
-              fontWeight: 'bold',
-              fontSize: '1.1rem',
-              border: 'none',
-              boxShadow: '0 4px 16px rgba(46, 204, 113, 0.15)',
-              cursor: 'pointer',
-              transition: 'background 0.2s, box-shadow 0.2s',
-              textDecoration: 'none',
-              display: 'inline-block',
-            }}
-            onMouseOver={e => {
-              e.currentTarget.style.background = 'linear-gradient(90deg, #27ae60 0%, #2ecc71 100%)';
-              e.currentTarget.style.boxShadow = '0 6px 24px rgba(39, 174, 96, 0.18)';
-            }}
-            onMouseOut={e => {
-              e.currentTarget.style.background = 'linear-gradient(90deg, #2ecc71 0%, #27ae60 100%)';
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(46, 204, 113, 0.15)';
-            }}
-          >
-            Return Home
-          </Link>
-        </div>
       </div>
     </div>
   );
