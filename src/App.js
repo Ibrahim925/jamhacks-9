@@ -828,7 +828,14 @@ const WritingPlatform = () => {
             }, CLICK_COOLDOWN);
 
             setLastClickTime(now);
-            button.click();
+            if (button.tagName.toLowerCase() === 'a') {
+              // Handle Link component click
+              button.click();
+              window.location.href = button.href;
+            } else {
+              // Handle normal button click
+              button.click();
+            }
             newMode = 'none';
           }
         }
@@ -877,22 +884,23 @@ const WritingPlatform = () => {
           const drawing = drawings[index];
           setDrawingName(drawing.name || '');
 
-          // Set up pages
-          setPages(drawing.pages.map(dataUrl => ({
+          // Set up pages with proper data structure
+          const loadedPages = drawing.pages.map((dataUrl, i) => ({
             dataUrl,
             canvas: null,
             strokes: [],
-            backgroundUrl: null
-          })));
+            backgroundUrl: dataUrl // Store the dataUrl as backgroundUrl for each page
+          }));
+          setPages(loadedPages);
 
-          // Load first page background if exists
-          if (drawing.pages[0]) {
+          // Load first page
+          if (loadedPages[0].backgroundUrl) {
             const img = new Image();
             img.onload = () => {
               backgroundImageRef.current = img;
               canvasCtxRef.current.redrawCanvas();
             };
-            img.src = drawing.pages[0];
+            img.src = loadedPages[0].backgroundUrl;
           }
         }
       }
@@ -908,69 +916,208 @@ const WritingPlatform = () => {
   };
 
   const switchPage = (pageIndex) => {
-    // Save current page
-    const currentCanvas = canvasRef.current;
-    const currentPages = [...pages];
-    currentPages[currentPage] = {
-      dataUrl: currentCanvas.toDataURL(),
-      canvas: currentCanvas,
-      strokes: strokesRef.current,
-      backgroundUrl: backgroundImageRef.current?.src  // Save URL instead of Image
-    };
-
-    // Load target page
-    if (pageIndex >= 0 && pageIndex < currentPages.length) {
-      // Reset strokes for new page
-      strokesRef.current = currentPages[pageIndex].strokes || [];
-
-      // Load background image if exists
-      if (currentPages[pageIndex].backgroundUrl) {
-        const img = new Image();
-        img.onload = () => {
-          backgroundImageRef.current = img;
-          canvasCtxRef.current.redrawCanvas();
-        };
-        img.src = currentPages[pageIndex].backgroundUrl;
-      } else {
-        backgroundImageRef.current = null;
-        canvasCtxRef.current.redrawCanvas();
-      }
-
-      setPages(currentPages);
-      setCurrentPage(pageIndex);
+    // Validate pageIndex
+    if (pageIndex < 0 || pageIndex >= pages.length) {
+      console.error('Invalid page index:', pageIndex);
+      return;
     }
-  };
 
-  const addNewPage = () => {
-    setPages([...pages, {
-      dataUrl: null,
-      canvas: null,
-      strokes: [],
-      backgroundUrl: null
-    }]);
-    switchPage(pages.length);
-  };
-
-  const saveDrawing = () => {
-    // Save current page first
-    const currentCanvas = canvasRef.current;
+    // Save current page state before switching
     const currentPages = [...pages];
     currentPages[currentPage] = {
-      dataUrl: currentCanvas.toDataURL(),
-      canvas: currentCanvas,
-      strokes: strokesRef.current,
+      dataUrl: canvasRef.current.toDataURL(),
+      strokes: [...strokesRef.current],
       backgroundUrl: backgroundImageRef.current?.src
     };
     setPages(currentPages);
 
-    // If we don't have a name yet, prompt for one
-    if (!drawingName) {
-      localStorage.setItem('tempPages', JSON.stringify(currentPages.map(p => p.dataUrl)));
-      setIsNaming(true);
-      localStorage.setItem('isSaving', 'true');
+    // Switch to new page
+    setCurrentPage(pageIndex);
+
+    // Load new page state
+    const newPage = currentPages[pageIndex];
+    if (!newPage) {
+      console.error('Page not found:', pageIndex);
+      return;
+    }
+
+    // Initialize strokes array if it doesn't exist
+    strokesRef.current = [...(newPage.strokes || [])];
+
+    // Load background if exists
+    if (newPage.backgroundUrl) {
+      const img = new Image();
+      img.onload = () => {
+        backgroundImageRef.current = img;
+        canvasCtxRef.current.redrawCanvas();
+      };
+      img.src = newPage.backgroundUrl;
     } else {
-      // We have a name, save directly
-      saveAndClose(currentPages.map(p => p.dataUrl), drawingName);
+      backgroundImageRef.current = null;
+      canvasCtxRef.current.redrawCanvas();
+    }
+  };
+
+  const addNewPage = () => {
+    // Save current page first
+    const currentPages = [...pages];
+    currentPages[currentPage] = {
+      dataUrl: canvasRef.current.toDataURL(),
+      strokes: [...strokesRef.current],
+      backgroundUrl: backgroundImageRef.current?.src
+    };
+
+    // Add new blank page
+    const newPageIndex = currentPages.length;
+    currentPages.push({
+      dataUrl: null,
+      strokes: [],
+      backgroundUrl: null
+    });
+
+    // Update state
+    setPages(currentPages);
+
+    // Clear current state before switching
+    strokesRef.current = [];
+    backgroundImageRef.current = null;
+
+    // Switch to new page
+    setCurrentPage(newPageIndex);
+    canvasCtxRef.current?.redrawCanvas();
+  };
+
+  const renderPage = async (page) => {
+    return new Promise((resolve) => {
+      // Create a temporary canvas for this page
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasRef.current.width;
+      tempCanvas.height = canvasRef.current.height;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      // Clear temp canvas
+      tempCtx.fillStyle = 'white';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      const drawStrokes = () => {
+        if (page.strokes && page.strokes.length > 0) {
+          page.strokes.forEach(stroke => {
+            tempCtx.beginPath();
+            tempCtx.strokeStyle = 'black';
+            tempCtx.lineWidth = 8;
+            tempCtx.lineCap = 'round';
+            tempCtx.lineJoin = 'round';
+
+            const [firstPoint, ...points] = stroke;
+            tempCtx.moveTo(firstPoint.x, firstPoint.y);
+            points.forEach(point => {
+              tempCtx.lineTo(point.x, point.y);
+            });
+            tempCtx.stroke();
+          });
+        }
+        resolve(tempCanvas.toDataURL());
+      };
+
+      // Draw background if exists
+      if (page.backgroundUrl) {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(
+            tempCanvas.width / img.width,
+            tempCanvas.height / img.height
+          );
+          const x = (tempCanvas.width - img.width * scale) / 2;
+          const y = (tempCanvas.height - img.height * scale) / 2;
+
+          tempCtx.drawImage(
+            img,
+            x,
+            y,
+            img.width * scale,
+            img.height * scale
+          );
+          drawStrokes();
+        };
+        img.onerror = () => {
+          console.error('Failed to load background image');
+          drawStrokes(); // Still draw strokes even if background fails
+        };
+        img.src = page.backgroundUrl;
+      } else {
+        drawStrokes();
+      }
+    });
+  };
+
+  const saveDrawing = async () => {
+    try {
+      // Save current page state first
+      const currentPages = [...pages];
+      currentPages[currentPage] = {
+        dataUrl: canvasRef.current.toDataURL(),
+        strokes: [...strokesRef.current],
+        backgroundUrl: backgroundImageRef.current?.src
+      };
+
+      // Create a temporary canvas for rendering pages
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvasRef.current.width;
+      tempCanvas.height = canvasRef.current.height;
+      const tempCtx = tempCanvas.getContext('2d');
+
+      // Generate dataUrls for all pages
+      const pageDataUrls = await Promise.all(
+        currentPages.map(async (page) => {
+          // Clear canvas
+          tempCtx.fillStyle = 'white';
+          tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+          // Draw background if exists
+          if (page.backgroundUrl) {
+            await new Promise((resolve) => {
+              const img = new Image();
+              img.onload = () => {
+                tempCtx.drawImage(img, 0, 0, tempCanvas.width, tempCanvas.height);
+                resolve();
+              };
+              img.src = page.backgroundUrl;
+            });
+          }
+
+          // Draw strokes
+          if (page.strokes && page.strokes.length > 0) {
+            page.strokes.forEach(stroke => {
+              tempCtx.beginPath();
+              tempCtx.strokeStyle = 'black';
+              tempCtx.lineWidth = 8;
+              tempCtx.lineCap = 'round';
+              tempCtx.lineJoin = 'round';
+
+              const [firstPoint, ...points] = stroke;
+              tempCtx.moveTo(firstPoint.x, firstPoint.y);
+              points.forEach(point => {
+                tempCtx.lineTo(point.x, point.y);
+              });
+              tempCtx.stroke();
+            });
+          }
+
+          return tempCanvas.toDataURL();
+        })
+      );
+
+      // Save all pages
+      if (!drawingName) {
+        localStorage.setItem('tempPages', JSON.stringify(pageDataUrls));
+        setIsNaming(true);
+        localStorage.setItem('isSaving', 'true');
+      } else {
+        saveAndClose(pageDataUrls, drawingName);
+      }
+    } catch (error) {
+      console.error('Error saving drawing:', error);
+      alert('There was an error saving your drawing. Please try again.');
     }
   };
 
@@ -1109,10 +1256,11 @@ const WritingPlatform = () => {
     );
   };
 
-  // Update the isPointingAtButton function to check for cooldown
+  // Update the isPointingAtButton function to check for buttons and links
   const isPointingAtButton = (x, y) => {
     const now = Date.now();
-    const buttons = document.querySelectorAll('button');
+    // Select both buttons and links with control-button class
+    const buttons = document.querySelectorAll('button, .control-button');
     for (const button of buttons) {
       const rect = button.getBoundingClientRect();
       if (
