@@ -18,41 +18,41 @@ const LandingPage = () => {
       <div className="landing-content">
         <div className="brand-header">
           <div className="logo-container">
-            <span className="logo-icon">✍️</span>
+            <span className="logo-icon">⚕️</span>
             <h1>AirScribe</h1>
           </div>
           <p className="tagline">
-            Draw freely. Touch <span className="highlight">nothing</span>.
+            Sterile documentation for the <span className="highlight">operating room</span>
           </p>
         </div>
         <div className="features-grid">
           <div className="feature-card">
-            <span className="feature-icon">🎯</span>
-            <h3>Precise Control</h3>
-            <p>Draw with natural hand movements</p>
+            <span className="feature-icon">🧤</span>
+            <h3>Sterile Interface</h3>
+            <p>Document without breaking sterility</p>
           </div>
           <div className="feature-card">
-            <span className="feature-icon">📝</span>
-            <h3>Multi-Page</h3>
-            <p>Create detailed documents</p>
+            <span className="feature-icon">📋</span>
+            <h3>Surgical Notes</h3>
+            <p>Multi-page operative reports</p>
           </div>
           <div className="feature-card">
-            <span className="feature-icon">🤖</span>
-            <h3>AI Analysis</h3>
-            <p>Get smart summaries of your notes</p>
+            <span className="feature-icon">⚡</span>
+            <h3>Quick Access</h3>
+            <p>Instant gesture recognition</p>
           </div>
           <div className="feature-card">
-            <span className="feature-icon">💾</span>
-            <h3>Auto-Save</h3>
-            <p>Never lose your work</p>
+            <span className="feature-icon">🔒</span>
+            <h3>Secure Storage</h3>
+            <p>Safe local data storage</p>
           </div>
         </div>
         <div className="landing-buttons">
           <Link to="/write" className="enter-button primary">
-            <span>✨ Start Creating</span>
+            <span>🧑‍⚕️ Start Documentation</span>
           </Link>
           <Link to="/gallery" className="enter-button secondary">
-            <span>🖼️ View Gallery</span>
+            <span>📑 View Records</span>
           </Link>
         </div>
       </div>
@@ -62,31 +62,25 @@ const LandingPage = () => {
 
 // Gallery Page Component
 const GalleryPage = () => {
-  const [drawings, setDrawings] = useState([]);
+  const [drawings, setDrawings] = useState(
+    JSON.parse(localStorage.getItem('drawings') || '[]')
+  );
   const [isNewDrawingDialogOpen, setIsNewDrawingDialogOpen] = useState(false);
+  const [isNewRecordDialogOpen, setIsNewRecordDialogOpen] = useState(false);
 
-  useEffect(() => {
-    const loadDrawings = () => {
-      const savedDrawings = JSON.parse(localStorage.getItem('drawings') || '[]');
-      setDrawings(savedDrawings);
-    };
+  const handleEdit = (index) => {
+    // Store the index of the drawing being edited
+    localStorage.setItem('editingIndex', index);
+    // Navigate to the writing platform
+    window.location.href = '/write';
+  };
 
-    // Load initial drawings
-    loadDrawings();
-
-    // Add storage event listener
-    window.addEventListener('storage', loadDrawings);
-
-    // Cleanup
-    return () => {
-      window.removeEventListener('storage', loadDrawings);
-    };
-  }, []);
-
-  const deleteDrawing = (index) => {
-    const newDrawings = drawings.filter((_, i) => i !== index);
-    localStorage.setItem('drawings', JSON.stringify(newDrawings));
-    setDrawings(newDrawings);
+  const handleDelete = (index) => {
+    if (window.confirm('Are you sure you want to delete this operative record? This action cannot be undone.')) {
+      const updatedDrawings = drawings.filter((_, i) => i !== index);
+      localStorage.setItem('drawings', JSON.stringify(updatedDrawings));
+      setDrawings(updatedDrawings);
+    }
   };
 
   const openDrawing = (drawing, index) => {
@@ -105,6 +99,19 @@ const GalleryPage = () => {
     if (type === 'image' && imageData) {
       localStorage.setItem('backgroundImage', imageData);
     }
+    window.location.href = '/write';
+  };
+
+  const handleNewRecordSelect = (type, imageData = null) => {
+    // Clear any existing editing state
+    localStorage.removeItem('editingIndex');
+    localStorage.removeItem('tempPages');
+
+    if (type === 'image' && imageData) {
+      localStorage.setItem('backgroundImage', imageData);
+    }
+
+    setIsNewRecordDialogOpen(false);
     window.location.href = '/write';
   };
 
@@ -211,41 +218,61 @@ const GalleryPage = () => {
   return (
     <div className="gallery-page">
       <div className="gallery-header">
-        <h1>Your Drawings</h1>
+        <h1>Operative Records</h1>
         <div className="gallery-actions">
           <button
-            onClick={() => setIsNewDrawingDialogOpen(true)}
+            onClick={() => setIsNewRecordDialogOpen(true)}
             className="nav-button new-drawing-button"
           >
-            <span className="button-icon">✨</span>
-            New Drawing
+            <span className="button-icon">📝</span>
+            New Record
           </button>
-          <Link to="/" className="nav-button home-button">
-            <span className="button-icon">🏠</span>
-            Home
-          </Link>
         </div>
       </div>
       <div className="gallery-grid">
         {drawings.length === 0 ? (
-          <p className="no-drawings">No drawings yet. Start creating!</p>
+          <div className="no-drawings">
+            <span className="empty-icon">📋</span>
+            <p>No operative records yet</p>
+            <p className="empty-subtitle">Start documenting your first procedure</p>
+          </div>
         ) : (
           drawings.map((drawing, index) => (
-            <DrawingCard
-              key={index}
-              drawing={drawing}
-              index={index}
-              onOpen={openDrawing}
-              onDelete={deleteDrawing}
-              onGenerateSummary={generateSummary}
-            />
+            <div key={drawing.timestamp} className="record-card">
+              <div className="record-header">
+                <h3 className="record-title">{drawing.name}</h3>
+                <span className="record-date">
+                  {new Date(drawing.timestamp).toLocaleDateString()}
+                </span>
+              </div>
+              <div className="record-preview">
+                <img src={drawing.pages[0]} alt="First page" />
+                <span className="page-count">{drawing.pages.length} pages</span>
+              </div>
+              <div className="record-actions">
+                <button
+                  onClick={() => handleEdit(index)}
+                  className="action-button edit-button"
+                >
+                  <span className="button-icon">✏️</span>
+                  Edit Record
+                </button>
+                <button
+                  onClick={() => handleDelete(index)}
+                  className="action-button delete-button"
+                >
+                  <span className="button-icon">🗑️</span>
+                  Delete
+                </button>
+              </div>
+            </div>
           ))
         )}
       </div>
-      <NewDrawingDialog
-        isOpen={isNewDrawingDialogOpen}
-        onClose={() => setIsNewDrawingDialogOpen(false)}
-        onSelectType={handleNewDrawing}
+      <NewRecordDialog
+        isOpen={isNewRecordDialogOpen}
+        onClose={() => setIsNewRecordDialogOpen(false)}
+        onSelectType={handleNewRecordSelect}
       />
     </div>
   );
@@ -415,7 +442,12 @@ const WritingPlatform = () => {
   const lastModeChangeRef = useRef(0);
   const neutralTimeoutRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(0);
-  const [pages, setPages] = useState([{ dataUrl: null, canvas: null }]);
+  const [pages, setPages] = useState([{
+    dataUrl: null,
+    canvas: null,
+    strokes: [],
+    backgroundUrl: null  // Store URL instead of Image object
+  }]);
   const strokesRef = useRef([]); // Store all strokes
   const currentStrokeRef = useRef(null); // Store current stroke points
   const backgroundImageRef = useRef(null);
@@ -750,7 +782,17 @@ const WritingPlatform = () => {
         const index = parseInt(editingIndex);
         if (index >= 0 && index < drawings.length) {
           const drawing = drawings[index];
-          // Load first page as background
+          setDrawingName(drawing.name || '');
+
+          // Set up pages
+          setPages(drawing.pages.map(dataUrl => ({
+            dataUrl,
+            canvas: null,
+            strokes: [],
+            backgroundUrl: null
+          })));
+
+          // Load first page background if exists
           if (drawing.pages[0]) {
             const img = new Image();
             img.onload = () => {
@@ -759,12 +801,6 @@ const WritingPlatform = () => {
             };
             img.src = drawing.pages[0];
           }
-          // Set up pages
-          setPages(drawing.pages.map(dataUrl => ({
-            dataUrl,
-            canvas: null,
-            strokes: []
-          })));
         }
       }
     };
@@ -785,7 +821,8 @@ const WritingPlatform = () => {
     currentPages[currentPage] = {
       dataUrl: currentCanvas.toDataURL(),
       canvas: currentCanvas,
-      strokes: strokesRef.current // Save strokes with the page
+      strokes: strokesRef.current,
+      backgroundUrl: backgroundImageRef.current?.src  // Save URL instead of Image
     };
 
     // Load target page
@@ -793,21 +830,17 @@ const WritingPlatform = () => {
       // Reset strokes for new page
       strokesRef.current = currentPages[pageIndex].strokes || [];
 
-      if (currentPages[pageIndex].dataUrl) {
+      // Load background image if exists
+      if (currentPages[pageIndex].backgroundUrl) {
         const img = new Image();
         img.onload = () => {
-          // Store as background if it's the first load
-          if (!backgroundImageRef.current) {
-            backgroundImageRef.current = img;
-          }
-          // Redraw everything
+          backgroundImageRef.current = img;
           canvasCtxRef.current.redrawCanvas();
         };
-        img.src = currentPages[pageIndex].dataUrl;
+        img.src = currentPages[pageIndex].backgroundUrl;
       } else {
-        // Clear canvas for new page
-        canvasCtxRef.current.fillStyle = 'white';
-        canvasCtxRef.current.fillRect(0, 0, currentCanvas.width, currentCanvas.height);
+        backgroundImageRef.current = null;
+        canvasCtxRef.current.redrawCanvas();
       }
 
       setPages(currentPages);
@@ -816,7 +849,12 @@ const WritingPlatform = () => {
   };
 
   const addNewPage = () => {
-    setPages([...pages, { dataUrl: null, canvas: null }]);
+    setPages([...pages, {
+      dataUrl: null,
+      canvas: null,
+      strokes: [],
+      backgroundUrl: null
+    }]);
     switchPage(pages.length);
   };
 
@@ -826,18 +864,20 @@ const WritingPlatform = () => {
     const currentPages = [...pages];
     currentPages[currentPage] = {
       dataUrl: currentCanvas.toDataURL(),
-      canvas: currentCanvas
+      canvas: currentCanvas,
+      strokes: strokesRef.current,
+      backgroundUrl: backgroundImageRef.current?.src
     };
     setPages(currentPages);
 
-    // If we already have a name, save directly and close
-    if (drawingName) {
-      saveAndClose(currentPages.map(p => p.dataUrl), drawingName);
-    } else {
-      // No name yet, prompt for one
+    // If we don't have a name yet, prompt for one
+    if (!drawingName) {
       localStorage.setItem('tempPages', JSON.stringify(currentPages.map(p => p.dataUrl)));
       setIsNaming(true);
       localStorage.setItem('isSaving', 'true');
+    } else {
+      // We have a name, save directly
+      saveAndClose(currentPages.map(p => p.dataUrl), drawingName);
     }
   };
 
@@ -917,6 +957,51 @@ const WritingPlatform = () => {
     }
   };
 
+  const removeBackground = () => {
+    backgroundImageRef.current = null;
+
+    // Remove background URL from current page in state
+    const currentPages = [...pages];
+    currentPages[currentPage] = {
+      ...currentPages[currentPage],
+      backgroundUrl: null
+    };
+    setPages(currentPages);
+
+    canvasCtxRef.current.redrawCanvas();
+  };
+
+  const addBackground = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            backgroundImageRef.current = img;
+
+            // Save the background URL in the pages state
+            const currentPages = [...pages];
+            currentPages[currentPage] = {
+              ...currentPages[currentPage],
+              backgroundUrl: img.src
+            };
+            setPages(currentPages);
+
+            canvasCtxRef.current.redrawCanvas();
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
+  };
+
   return (
     <div className="writing-platform">
       <div className="controls-container">
@@ -937,6 +1022,21 @@ const WritingPlatform = () => {
           <button onClick={openNameDialog} className="control-button name-button">
             <span className="button-icon">✏️</span>
             {drawingName ? 'Rename' : 'Name Drawing'}
+          </button>
+        </div>
+
+        <div className="controls-group">
+          <button onClick={addBackground} className="control-button background-button">
+            <span className="button-icon">🖼️</span>
+            Add Background
+          </button>
+          <button
+            onClick={removeBackground}
+            className="control-button background-remove-button"
+            disabled={!backgroundImageRef.current}
+          >
+            <span className="button-icon">❌</span>
+            Remove Background
           </button>
         </div>
 
@@ -979,6 +1079,59 @@ const WritingPlatform = () => {
         defaultValue={drawingName}
         existingNames={JSON.parse(localStorage.getItem('drawings') || '[]').map(d => d.name)}
       />
+    </div>
+  );
+};
+
+// New Record Dialog Component
+const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
+  if (!isOpen) return null;
+
+  const handleImageSelect = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          onSelectType('image', e.target.result);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
+  };
+
+  return (
+    <div className="dialog-overlay">
+      <div className="dialog">
+        <h2>Create New Record</h2>
+        <div className="dialog-content">
+          <button
+            className="option-button"
+            onClick={() => onSelectType('blank')}
+          >
+            <span className="button-icon">📝</span>
+            <span>Blank Record</span>
+            <p className="option-description">Start with a clean canvas</p>
+          </button>
+          <button
+            className="option-button"
+            onClick={handleImageSelect}
+          >
+            <span className="button-icon">🖼️</span>
+            <span>Image Background</span>
+            <p className="option-description">Start with a reference image</p>
+          </button>
+        </div>
+        <div className="dialog-buttons">
+          <button onClick={onClose} className="dialog-button cancel">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
