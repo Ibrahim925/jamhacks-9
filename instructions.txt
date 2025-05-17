@@ -1,0 +1,7 @@
+Create a fullstack webapp with the following requirements:
+- A frontend with a whiteboard
+- User should be able to control the whiteboard with their hand through camera input
+- A cursor should show where the user's "hand" is currently positioned on the screen
+- If the user has a pinched finger position, they can draw
+- If the user's hand is open, do nothing
+- If the user has the back of their hand shown, erase
