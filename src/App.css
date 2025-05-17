@@ -79,10 +79,11 @@ body {
 
 .controls-container {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   justify-content: center;
   width: 100%;
   max-width: 800px;
+  margin-bottom: 1rem;
 }
 
 .whiteboard-container {
@@ -187,4 +188,429 @@ body {
     padding: 0.8rem 2rem;
     font-size: 1rem;
   }
+}
+
+/* Gallery Page Styles */
+.gallery-page {
+  min-height: 100vh;
+  padding: 2rem;
+  background: #f0f2f5;
+}
+
+.gallery-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding: 0 1rem;
+}
+
+.gallery-header h1 {
+  color: #1e293b;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 2rem;
+  padding: 1rem;
+}
+
+.drawing-card {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  border: 1px solid #edf2f7;
+}
+
+.drawing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.drawing-card img {
+  width: 100%;
+  height: 250px;
+  object-fit: contain;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.drawing-card img:hover {
+  opacity: 0.9;
+  background: #e9ecef;
+}
+
+.drawing-info {
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8f9fa;
+  border-top: 1px solid #edf2f7;
+}
+
+.drawing-info span {
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.drawing-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.drawing-actions button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-button {
+  background: #3b82f6;
+  color: white;
+}
+
+.edit-button:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.edit-button::before {
+  content: "✏️";
+  font-size: 14px;
+}
+
+.delete-button {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.delete-button:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+}
+
+.delete-button::before {
+  content: "🗑️";
+  font-size: 14px;
+}
+
+.no-drawings {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: #64748b;
+  font-size: 1.2rem;
+  padding: 4rem 2rem;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 2px dashed #e2e8f0;
+}
+
+/* Landing Page Updates */
+.landing-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.gallery-button {
+  background: linear-gradient(90deg, #2ecc71 0%, #27ae60 100%);
+}
+
+.gallery-button:hover {
+  background: linear-gradient(90deg, #27ae60 0%, #2ecc71 100%);
+}
+
+/* Control Button Updates */
+.control-button {
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  background: #4a90e2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.button-icon {
+  font-size: 1.1rem;
+}
+
+.clear-button {
+  background: #ef4444;
+}
+
+.clear-button:hover {
+  background: #dc2626;
+}
+
+.name-button {
+  background: #8b5cf6;
+}
+
+.name-button:hover {
+  background: #7c3aed;
+}
+
+.save-button {
+  background: #2ecc71;
+}
+
+.save-button:hover {
+  background: #22c55e;
+}
+
+.return-button {
+  background: #64748b;
+}
+
+.return-button:hover {
+  background: #475569;
+}
+
+/* Responsive Updates */
+@media (max-width: 768px) {
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  }
+
+  .landing-buttons {
+    flex-direction: column;
+  }
+}
+
+/* Dialog Styles */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.dialog {
+  background: white;
+  padding: 2rem;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 400px;
+}
+
+.dialog h2 {
+  color: #1e293b;
+  margin-bottom: 1.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.dialog-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  transition: all 0.2s;
+}
+
+.dialog-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.dialog-error {
+  color: #ef4444;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.dialog-button {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dialog-button.save {
+  background: #3b82f6;
+  color: white;
+  border: none;
+}
+
+.dialog-button.save:hover {
+  background: #2563eb;
+}
+
+.dialog-button.cancel {
+  background: #f1f5f9;
+  color: #64748b;
+  border: none;
+}
+
+.dialog-button.cancel:hover {
+  background: #e2e8f0;
+}
+
+/* Drawing Card Name Styles */
+.drawing-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawing-name {
+  color: #1e293b;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Make buttons more compact on mobile */
+@media (max-width: 640px) {
+  .controls-container {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .control-button {
+    flex: 1 1 calc(50% - 8px);
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    justify-content: center;
+  }
+}
+
+/* Gallery Header Updates */
+.gallery-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.nav-button {
+  padding: 12px 20px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #64748b;
+}
+
+.nav-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.new-drawing-button {
+  background: #3b82f6;
+}
+
+.new-drawing-button:hover {
+  background: #2563eb;
+}
+
+/* Update responsive styles */
+@media (max-width: 640px) {
+  .gallery-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .gallery-actions {
+    flex-direction: column;
+  }
+
+  .nav-button {
+    justify-content: center;
+  }
+}
+
+.home-button {
+  background: #64748b;
+}
+
+.home-button:hover {
+  background: #475569;
+}
+
+/* New Drawing Dialog Styles */
+.dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.option-button {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.1rem;
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.option-button:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.option-button .button-icon {
+  font-size: 1.4rem;
 }
