@@ -2,21 +2,57 @@ import React, { useRef, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import OpenAI from 'openai';
 import './App.css';
+
+// Add this constant near the top of the file
+const openai = new OpenAI({
+  apiKey: process.env.REACT_APP_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true // Note: In production, you should use a backend
+});
 
 // Landing Page Component
 const LandingPage = () => {
   return (
     <div className="landing-page">
       <div className="landing-content">
-        <h1>Welcome to AirScribe</h1>
-        <p>Write in the air using hand gestures</p>
+        <div className="brand-header">
+          <div className="logo-container">
+            <span className="logo-icon">✍️</span>
+            <h1>AirScribe</h1>
+          </div>
+          <p className="tagline">
+            Draw freely. Touch <span className="highlight">nothing</span>.
+          </p>
+        </div>
+        <div className="features-grid">
+          <div className="feature-card">
+            <span className="feature-icon">🎯</span>
+            <h3>Precise Control</h3>
+            <p>Draw with natural hand movements</p>
+          </div>
+          <div className="feature-card">
+            <span className="feature-icon">📝</span>
+            <h3>Multi-Page</h3>
+            <p>Create detailed documents</p>
+          </div>
+          <div className="feature-card">
+            <span className="feature-icon">🤖</span>
+            <h3>AI Analysis</h3>
+            <p>Get smart summaries of your notes</p>
+          </div>
+          <div className="feature-card">
+            <span className="feature-icon">💾</span>
+            <h3>Auto-Save</h3>
+            <p>Never lose your work</p>
+          </div>
+        </div>
         <div className="landing-buttons">
-          <Link to="/write" className="enter-button">
-            Start Writing
+          <Link to="/write" className="enter-button primary">
+            <span>✨ Start Creating</span>
           </Link>
-          <Link to="/gallery" className="enter-button gallery-button">
-            View Gallery
+          <Link to="/gallery" className="enter-button secondary">
+            <span>🖼️ View Gallery</span>
           </Link>
         </div>
       </div>
@@ -72,6 +108,106 @@ const GalleryPage = () => {
     window.location.href = '/write';
   };
 
+  // Update the drawing card in GalleryPage to include a summary button and display
+  const DrawingCard = ({ drawing, index, onOpen, onDelete, onGenerateSummary }) => {
+    const [summary, setSummary] = useState(drawing.summary || '');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    return (
+      <div className="drawing-card">
+        <div className="drawing-image-container">
+          <img
+            src={drawing.pages ? drawing.pages[0] : drawing.dataUrl}
+            alt={drawing.name || `Drawing ${index + 1}`}
+            onClick={() => onOpen(drawing, index)}
+          />
+        </div>
+        <div className="drawing-info">
+          <div className="drawing-header">
+            <h3 className="drawing-name">{drawing.name || 'Untitled'}</h3>
+            <span className="drawing-date">
+              {new Date(drawing.timestamp).toLocaleDateString()}
+            </span>
+          </div>
+          {summary && (
+            <div className={`drawing-summary ${isExpanded ? 'expanded' : ''}`}>
+              <p>{summary}</p>
+              <button
+                className="expand-button"
+                onClick={() => setIsExpanded(!isExpanded)}
+              >
+                {isExpanded ? 'Show Less' : 'Show More'}
+              </button>
+            </div>
+          )}
+          <div className="drawing-actions">
+            <button
+              onClick={() => onOpen(drawing, index)}
+              className="action-button edit-button"
+            >
+              <span className="button-icon">✏️</span>
+              Edit
+            </button>
+            <button
+              onClick={() => onDelete(index)}
+              className="action-button delete-button"
+            >
+              <span className="button-icon">🗑️</span>
+              Delete
+            </button>
+            <button
+              onClick={() => onGenerateSummary(drawing, index, setSummary)}
+              className="action-button summary-button"
+              disabled={isGenerating}
+            >
+              <span className="button-icon">🤖</span>
+              {isGenerating ? 'Analyzing...' : 'Analyze'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Add the generateSummary function to GalleryPage
+  const generateSummary = async (drawing, index, setSummary) => {
+    try {
+      const pages = drawing.pages || [drawing.dataUrl];
+
+      // Call OpenAI Vision API
+      const response = await openai.responses.create({
+        model: "gpt-4.1-mini",
+        input: [{
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Please analyze this handwritten note and provide a brief summary of its content. Focus on the main topics and key points."
+            },
+            ...pages.map(page => ({
+              type: "input_image",
+              image_url: page
+            }))
+          ],
+        }],
+      });
+
+      const summary = response.output_text;
+
+      // Update local storage
+      const drawings = JSON.parse(localStorage.getItem('drawings') || '[]');
+      drawings[index].summary = summary;
+      localStorage.setItem('drawings', JSON.stringify(drawings));
+
+      // Update state
+      setSummary(summary);
+    } catch (error) {
+      console.error('Error generating summary:', error);
+      alert(`Failed to generate summary: ${error.message}. Please try again later.`);
+    }
+  };
+
   return (
     <div className="gallery-page">
       <div className="gallery-header">
@@ -95,34 +231,14 @@ const GalleryPage = () => {
           <p className="no-drawings">No drawings yet. Start creating!</p>
         ) : (
           drawings.map((drawing, index) => (
-            <div key={index} className="drawing-card">
-              <img
-                src={drawing.pages ? drawing.pages[0] : drawing.dataUrl}
-                alt={drawing.name || `Drawing ${index + 1}`}
-                onClick={() => openDrawing(drawing, index)}
-                style={{ cursor: 'pointer' }}
-              />
-              <div className="drawing-info">
-                <div className="drawing-details">
-                  <h3 className="drawing-name">{drawing.name || 'Untitled'}</h3>
-                  <span>{new Date(drawing.timestamp).toLocaleDateString()}</span>
-                </div>
-                <div className="drawing-actions">
-                  <button
-                    onClick={() => openDrawing(drawing, index)}
-                    className="edit-button"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => deleteDrawing(index)}
-                    className="delete-button"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
+            <DrawingCard
+              key={index}
+              drawing={drawing}
+              index={index}
+              onOpen={openDrawing}
+              onDelete={deleteDrawing}
+              onGenerateSummary={generateSummary}
+            />
           ))
         )}
       </div>
@@ -300,10 +416,75 @@ const WritingPlatform = () => {
   const neutralTimeoutRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [pages, setPages] = useState([{ dataUrl: null, canvas: null }]);
+  const strokesRef = useRef([]); // Store all strokes
+  const currentStrokeRef = useRef(null); // Store current stroke points
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
+
+    // Function to redraw all strokes
+    const redrawCanvas = () => {
+      context.fillStyle = 'white';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      strokesRef.current.forEach(stroke => {
+        context.beginPath();
+        context.strokeStyle = 'black';
+        context.lineWidth = 8;
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+
+        const [firstPoint, ...points] = stroke;
+        context.moveTo(firstPoint.x, firstPoint.y);
+        points.forEach(point => {
+          context.lineTo(point.x, point.y);
+        });
+        context.stroke();
+      });
+    };
+
+    // Function to check if point is near a stroke
+    const isPointNearStroke = (x, y, stroke, threshold = 20) => {
+      for (let i = 1; i < stroke.length; i++) {
+        const p1 = stroke[i - 1];
+        const p2 = stroke[i];
+
+        // Calculate distance from point to line segment
+        const A = x - p1.x;
+        const B = y - p1.y;
+        const C = p2.x - p1.x;
+        const D = p2.y - p1.y;
+
+        const dot = A * C + B * D;
+        const len_sq = C * C + D * D;
+        let param = -1;
+
+        if (len_sq !== 0) param = dot / len_sq;
+
+        let xx, yy;
+
+        if (param < 0) {
+          xx = p1.x;
+          yy = p1.y;
+        } else if (param > 1) {
+          xx = p2.x;
+          yy = p2.y;
+        } else {
+          xx = p1.x + param * C;
+          yy = p1.y + param * D;
+        }
+
+        const dx = x - xx;
+        const dy = y - yy;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < threshold) {
+          return true;
+        }
+      }
+      return false;
+    };
 
     // Check for background image
     const backgroundImage = localStorage.getItem('backgroundImage');
@@ -424,10 +605,8 @@ const WritingPlatform = () => {
       const x = (1 - indexTip.x) * canvas.width;
       const y = indexTip.y * canvas.height;
 
-      // Apply simple smoothing
-      const smoothedX = lastPosRef.current.x * 0.7 + x * 0.3;
-      const smoothedY = lastPosRef.current.y * 0.7 + y * 0.3;
-      lastPosRef.current = { x: smoothedX, y: smoothedY };
+      // Remove smoothing completely
+      lastPosRef.current = { x, y };
 
       // Then do gesture detection
       const isFingerCurled = (tip, base) => {
@@ -487,8 +666,8 @@ const WritingPlatform = () => {
 
       // Update cursor appearance based on mode
       if (cursorRef.current) {
-        cursorRef.current.style.left = `${smoothedX}px`;
-        cursorRef.current.style.top = `${smoothedY}px`;
+        cursorRef.current.style.left = `${x}px`;
+        cursorRef.current.style.top = `${y}px`;
 
         switch (newMode) {
           case 'erase':
@@ -525,25 +704,42 @@ const WritingPlatform = () => {
       // Drawing/Erasing logic
       if (newMode !== 'none') {
         if (!isDrawingRef.current) {
-          context.beginPath();
-          context.moveTo(smoothedX, smoothedY);
+          if (newMode === 'draw') {
+            currentStrokeRef.current = [];
+          }
           isDrawingRef.current = true;
         }
 
         if (newMode === 'erase') {
-          context.globalCompositeOperation = 'destination-out';
-          context.lineWidth = 30;
+          // Check if eraser touches any stroke
+          strokesRef.current = strokesRef.current.filter(stroke =>
+            !isPointNearStroke(x, y, stroke)
+          );
+          redrawCanvas();
         } else {
-          context.globalCompositeOperation = 'source-over';
-          context.lineWidth = 8;
-        }
+          // Normal drawing
+          currentStrokeRef.current.push({ x, y });
 
-        context.lineTo(smoothedX, smoothedY);
-        context.stroke();
+          context.beginPath();
+          context.strokeStyle = 'black';
+          context.lineWidth = 8;
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+
+          if (currentStrokeRef.current.length > 1) {
+            const [prevPoint, currentPoint] = currentStrokeRef.current.slice(-2);
+            context.moveTo(prevPoint.x, prevPoint.y);
+            context.lineTo(currentPoint.x, currentPoint.y);
+            context.stroke();
+          }
+        }
       } else {
         if (isDrawingRef.current) {
+          if (currentStrokeRef.current?.length > 1) {
+            strokesRef.current.push([...currentStrokeRef.current]);
+          }
+          currentStrokeRef.current = null;
           isDrawingRef.current = false;
-          context.closePath();
         }
       }
 
@@ -717,28 +913,36 @@ const WritingPlatform = () => {
   return (
     <div className="writing-platform">
       <div className="controls-container">
-        <PageNavigation
-          currentPage={currentPage}
-          totalPages={pages.length}
-          onPageChange={switchPage}
-          onAddPage={addNewPage}
-        />
-        <button onClick={clearCanvas} className="control-button clear-button">
-          <span className="button-icon">🗑️</span>
-          Clear Canvas
-        </button>
-        <button onClick={openNameDialog} className="control-button name-button">
-          <span className="button-icon">✏️</span>
-          {drawingName ? 'Rename' : 'Name Drawing'}
-        </button>
-        <button onClick={saveDrawing} className="control-button save-button">
-          <span className="button-icon">💾</span>
-          Save Drawing
-        </button>
-        <Link to="/" className="control-button return-button">
-          <span className="button-icon">🏠</span>
-          Return Home
-        </Link>
+        <div className="controls-group">
+          <PageNavigation
+            currentPage={currentPage}
+            totalPages={pages.length}
+            onPageChange={switchPage}
+            onAddPage={addNewPage}
+          />
+        </div>
+
+        <div className="controls-group">
+          <button onClick={clearCanvas} className="control-button clear-button">
+            <span className="button-icon">🗑️</span>
+            Clear Canvas
+          </button>
+          <button onClick={openNameDialog} className="control-button name-button">
+            <span className="button-icon">✏️</span>
+            {drawingName ? 'Rename' : 'Name Drawing'}
+          </button>
+        </div>
+
+        <div className="controls-group">
+          <button onClick={saveDrawing} className="control-button save-button">
+            <span className="button-icon">💾</span>
+            Save Drawing
+          </button>
+          <Link to="/" className="control-button return-button">
+            <span className="button-icon">🏠</span>
+            Return Home
+          </Link>
+        </div>
       </div>
       <div className="whiteboard-container">
         <canvas
