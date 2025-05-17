@@ -453,6 +453,28 @@ const DeletePageDialog = ({ isOpen, onClose, onConfirm }) => {
   );
 };
 
+// Add this helper function at the top of WritingPlatform component
+const averagePoints = (points, smoothing = 0.2) => {
+  if (points.length < 3) return points;
+
+  const smoothed = [];
+  smoothed.push(points[0]); // Keep first point
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const current = points[i];
+    const next = points[i + 1];
+
+    const avgX = current.x * (1 - smoothing) + (prev.x + next.x) / 2 * smoothing;
+    const avgY = current.y * (1 - smoothing) + (prev.y + next.y) / 2 * smoothing;
+
+    smoothed.push({ x: avgX, y: avgY });
+  }
+
+  smoothed.push(points[points.length - 1]); // Keep last point
+  return smoothed;
+};
+
 // Writing Platform Component
 const WritingPlatform = () => {
   const webcamRef = useRef(null);
@@ -538,19 +560,29 @@ const WritingPlatform = () => {
         );
       }
 
-      // Draw strokes on top
+      // Draw strokes with smoothing
       strokesRef.current.forEach(stroke => {
+        if (stroke.length < 2) return;
+
+        const smoothedPoints = averagePoints(stroke);
+
         context.beginPath();
         context.strokeStyle = 'black';
         context.lineWidth = 8;
         context.lineCap = 'round';
         context.lineJoin = 'round';
 
-        const [firstPoint, ...points] = stroke;
-        context.moveTo(firstPoint.x, firstPoint.y);
-        points.forEach(point => {
-          context.lineTo(point.x, point.y);
-        });
+        context.moveTo(smoothedPoints[0].x, smoothedPoints[0].y);
+
+        if (smoothedPoints.length === 2) {
+          context.lineTo(smoothedPoints[1].x, smoothedPoints[1].y);
+        } else {
+          for (let i = 1; i < smoothedPoints.length - 1; i++) {
+            const xc = (smoothedPoints[i].x + smoothedPoints[i + 1].x) / 2;
+            const yc = (smoothedPoints[i].y + smoothedPoints[i + 1].y) / 2;
+            context.quadraticCurveTo(smoothedPoints[i].x, smoothedPoints[i].y, xc, yc);
+          }
+        }
         context.stroke();
       });
     };
@@ -789,28 +821,38 @@ const WritingPlatform = () => {
             );
             canvasCtxRef.current.redrawCanvas();
           } else if (newMode === 'draw') {
-            // Normal drawing - adjust coordinates relative to canvas
             const rect = canvas.getBoundingClientRect();
             const canvasX = x - rect.left;
             const canvasY = y - rect.top;
 
-            // Ensure currentStrokeRef.current exists before pushing
             if (!currentStrokeRef.current) {
               currentStrokeRef.current = [];
             }
 
             currentStrokeRef.current.push({ x: canvasX, y: canvasY });
 
-            context.beginPath();
-            context.strokeStyle = 'black';
-            context.lineWidth = 8;
-            context.lineCap = 'round';
-            context.lineJoin = 'round';
+            // Only draw if we have enough points
+            if (currentStrokeRef.current.length >= 2) {
+              const points = averagePoints(currentStrokeRef.current.slice(-3));
 
-            if (currentStrokeRef.current.length > 1) {
-              const [prevPoint, currentPoint] = currentStrokeRef.current.slice(-2);
-              context.moveTo(prevPoint.x, prevPoint.y);
-              context.lineTo(currentPoint.x, currentPoint.y);
+              context.beginPath();
+              context.strokeStyle = 'black';
+              context.lineWidth = 8;
+              context.lineCap = 'round';
+              context.lineJoin = 'round';
+
+              context.moveTo(points[0].x, points[0].y);
+
+              if (points.length === 2) {
+                context.lineTo(points[1].x, points[1].y);
+              } else {
+                // Use Bézier curve for smoother lines
+                for (let i = 1; i < points.length - 1; i++) {
+                  const xc = (points[i].x + points[i + 1].x) / 2;
+                  const yc = (points[i].y + points[i + 1].y) / 2;
+                  context.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                }
+              }
               context.stroke();
             }
           }
