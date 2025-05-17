@@ -253,15 +253,15 @@ body {
 }
 
 .cursor {
-  position: absolute;
+  position: fixed;
   width: 20px;
   height: 20px;
   border-radius: 50%;
   pointer-events: none;
-  z-index: 3;
+  z-index: 1000;
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   opacity: 0.8;
-  box-shadow: 0 0 10px rgba(2, 132, 199, 0.3); /* Soft glow effect using primary color */
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.3);
   transform: translate(-50%, -50%);
   transition: transform 0.1s ease-out;
 }
@@ -467,9 +467,9 @@ body {
 
 .dialog-buttons {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 1rem;
-  margin-top: 1rem;
+  margin-top: 2rem;
 }
 
 .dialog-button {
@@ -489,6 +489,17 @@ body {
 
 .dialog-button.cancel:hover {
   background: var(--border);
+}
+
+.dialog-button.delete-button {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+}
+
+.dialog-button.delete-button:hover {
+  filter: brightness(1.1);
+  transform: translateY(-2px);
 }
 
 /* Dialog Animations */
@@ -633,7 +644,8 @@ body {
   align-items: center;
   justify-content: flex-start;
   gap: 0.75rem;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   text-transform: none;
   letter-spacing: 0.02em;
@@ -664,13 +676,17 @@ body {
   transform: translateX(100%);
 }
 
-.control-button:hover {
+.control-button:hover,
+.control-button[data-hover="true"] {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+  filter: brightness(1.1);
 }
 
-.control-button:active {
+.control-button:active,
+.control-button[data-clicked="true"] {
   transform: translateY(1px);
+  filter: brightness(0.95);
 }
 
 /* Button icon */
@@ -1030,4 +1046,66 @@ a.control-button {
 .background-remove-button:disabled:hover {
   transform: none;
   box-shadow: none;
+}
+
+/* Add these styles for the delete page button */
+.page-nav-button.delete-page {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.page-nav-button.delete-page:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+}
+
+/* Add styles for the dialog message */
+.dialog-message {
+  margin: 1.5rem 0;
+  color: var(--text);
+  text-align: center;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* Update the dialog buttons layout */
+.dialog-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.dialog-button.delete-button {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+}
+
+.dialog-button.delete-button:hover {
+  filter: brightness(1.1);
+  transform: translateY(-2px);
+}
+
+/* Add cooldown styling */
+.control-button.in-cooldown,
+.page-nav-button.in-cooldown {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none !important;
+  filter: grayscale(50%);
+}
+
+.control-button.in-cooldown:hover,
+.page-nav-button.in-cooldown:hover {
+  transform: none !important;
+  box-shadow: none;
+}
+
+/* Add a transition for the cooldown effect */
+.control-button,
+.page-nav-button {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    filter 0.2s ease;
 }

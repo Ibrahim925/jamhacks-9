@@ -391,8 +391,8 @@ const NewDrawingDialog = ({ isOpen, onClose, onSelectType }) => {
   );
 };
 
-// Add PageNavigation component
-const PageNavigation = ({ currentPage, totalPages, onPageChange, onAddPage }) => {
+// Update the PageNavigation component to include the delete button
+const PageNavigation = ({ currentPage, totalPages, onPageChange, onAddPage, onDeletePage }) => {
   return (
     <div className="page-navigation">
       <button
@@ -419,6 +419,36 @@ const PageNavigation = ({ currentPage, totalPages, onPageChange, onAddPage }) =>
         <span className="button-icon">📄</span>
         Add Page
       </button>
+      <button
+        onClick={onDeletePage}
+        className="page-nav-button delete-page"
+        disabled={totalPages <= 1}
+      >
+        <span className="button-icon">🗑️</span>
+        Delete Page
+      </button>
+    </div>
+  );
+};
+
+// Move DeletePageDialog outside WritingPlatform component
+const DeletePageDialog = ({ isOpen, onClose, onConfirm }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="dialog-overlay">
+      <div className="dialog">
+        <h2>Delete Page</h2>
+        <p className="dialog-message">Are you sure you want to delete this page? This action cannot be undone.</p>
+        <div className="dialog-buttons">
+          <button onClick={onConfirm} className="dialog-button delete-button">
+            Delete Page
+          </button>
+          <button onClick={onClose} className="dialog-button cancel">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
@@ -451,6 +481,33 @@ const WritingPlatform = () => {
   const strokesRef = useRef([]); // Store all strokes
   const currentStrokeRef = useRef(null); // Store current stroke points
   const backgroundImageRef = useRef(null);
+  const [lastClickTime, setLastClickTime] = useState(0);
+  const CLICK_COOLDOWN = 500; // Minimum time between clicks in ms
+  const [isDeletePageDialogOpen, setIsDeletePageDialogOpen] = useState(false);
+
+  const deletePage = () => {
+    if (pages.length <= 1) {
+      alert("Cannot delete the last page");
+      return;
+    }
+
+    // Save all pages except current one
+    const newPages = [...pages];
+    newPages.splice(currentPage, 1);
+    setPages(newPages);
+
+    // Switch to previous page if deleting last page, otherwise stay on current index
+    const newPageIndex = currentPage >= newPages.length ? newPages.length - 1 : currentPage;
+
+    // Clear current page data
+    strokesRef.current = [];
+    backgroundImageRef.current = null;
+
+    // Update page state and redraw
+    setCurrentPage(newPageIndex);
+    canvasCtxRef.current?.redrawCanvas();
+    setIsDeletePageDialogOpen(false);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -608,8 +665,8 @@ const WritingPlatform = () => {
       const pinkyBase = hand[17];
 
       // Calculate coordinates
-      const x = (1 - indexTip.x) * canvas.width;
-      const y = indexTip.y * canvas.height;
+      const x = (1 - indexTip.x) * window.innerWidth;
+      const y = indexTip.y * window.innerHeight;
 
       // Remove smoothing completely
       lastPosRef.current = { x, y };
@@ -675,6 +732,8 @@ const WritingPlatform = () => {
         cursorRef.current.style.left = `${x}px`;
         cursorRef.current.style.top = `${y}px`;
 
+        const isOverButton = isPointingAtButton(x, y);
+
         switch (newMode) {
           case 'erase':
             cursorRef.current.style.backgroundColor = 'white';
@@ -683,7 +742,13 @@ const WritingPlatform = () => {
             cursorRef.current.style.height = '30px';
             break;
           case 'draw':
-            cursorRef.current.style.backgroundColor = 'green';
+            if (isOverButton && !isPointInCanvas(x, y)) {
+              cursorRef.current.style.backgroundColor = '#10b981';
+              cursorRef.current.style.transform = 'translate(-50%, -50%) scale(1.2)';
+            } else {
+              cursorRef.current.style.backgroundColor = 'green';
+              cursorRef.current.style.transform = 'translate(-50%, -50%)';
+            }
             cursorRef.current.style.border = 'none';
             cursorRef.current.style.width = '20px';
             cursorRef.current.style.height = '20px';
@@ -693,6 +758,7 @@ const WritingPlatform = () => {
             cursorRef.current.style.border = 'none';
             cursorRef.current.style.width = '20px';
             cursorRef.current.style.height = '20px';
+            cursorRef.current.style.transform = 'translate(-50%, -50%)';
         }
 
         // Add debug info for fist detection
@@ -710,33 +776,60 @@ const WritingPlatform = () => {
       // Drawing/Erasing logic
       if (newMode !== 'none') {
         if (!isDrawingRef.current) {
-          if (newMode === 'draw') {
-            currentStrokeRef.current = [];
-          }
+          // Initialize stroke array when starting to draw
+          currentStrokeRef.current = [];
           isDrawingRef.current = true;
         }
 
-        if (newMode === 'erase') {
-          // Check if eraser touches any stroke
-          strokesRef.current = strokesRef.current.filter(stroke =>
-            !canvasCtxRef.current.isPointNearStroke(x, y, stroke)
-          );
-          canvasCtxRef.current.redrawCanvas();
-        } else {
-          // Normal drawing
-          currentStrokeRef.current.push({ x, y });
+        if (isPointInCanvas(x, y)) {
+          if (newMode === 'erase') {
+            // Check if eraser touches any stroke
+            strokesRef.current = strokesRef.current.filter(stroke =>
+              !canvasCtxRef.current.isPointNearStroke(x - canvas.getBoundingClientRect().left, y - canvas.getBoundingClientRect().top, stroke)
+            );
+            canvasCtxRef.current.redrawCanvas();
+          } else if (newMode === 'draw') {
+            // Normal drawing - adjust coordinates relative to canvas
+            const rect = canvas.getBoundingClientRect();
+            const canvasX = x - rect.left;
+            const canvasY = y - rect.top;
 
-          context.beginPath();
-          context.strokeStyle = 'black';
-          context.lineWidth = 8;
-          context.lineCap = 'round';
-          context.lineJoin = 'round';
+            // Ensure currentStrokeRef.current exists before pushing
+            if (!currentStrokeRef.current) {
+              currentStrokeRef.current = [];
+            }
 
-          if (currentStrokeRef.current.length > 1) {
-            const [prevPoint, currentPoint] = currentStrokeRef.current.slice(-2);
-            context.moveTo(prevPoint.x, prevPoint.y);
-            context.lineTo(currentPoint.x, currentPoint.y);
-            context.stroke();
+            currentStrokeRef.current.push({ x: canvasX, y: canvasY });
+
+            context.beginPath();
+            context.strokeStyle = 'black';
+            context.lineWidth = 8;
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+
+            if (currentStrokeRef.current.length > 1) {
+              const [prevPoint, currentPoint] = currentStrokeRef.current.slice(-2);
+              context.moveTo(prevPoint.x, prevPoint.y);
+              context.lineTo(currentPoint.x, currentPoint.y);
+              context.stroke();
+            }
+          }
+        }
+
+        // Add this after the mode detection but before the drawing logic
+        if (newMode === 'draw') {
+          const now = Date.now();
+          const button = isPointingAtButton(x, y);
+          if (button && !isPointInCanvas(x, y)) {
+            button.dataset.lastClick = now.toString();
+            button.classList.add('in-cooldown');
+            setTimeout(() => {
+              button.classList.remove('in-cooldown');
+            }, CLICK_COOLDOWN);
+
+            setLastClickTime(now);
+            button.click();
+            newMode = 'none';
           }
         }
       } else {
@@ -1002,6 +1095,43 @@ const WritingPlatform = () => {
     input.click();
   };
 
+  // Add isPointInCanvas function
+  const isPointInCanvas = (x, y) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+
+    const rect = canvas.getBoundingClientRect();
+    return (
+      x >= rect.left &&
+      x <= rect.right &&
+      y >= rect.top &&
+      y <= rect.bottom
+    );
+  };
+
+  // Update the isPointingAtButton function to check for cooldown
+  const isPointingAtButton = (x, y) => {
+    const now = Date.now();
+    const buttons = document.querySelectorAll('button');
+    for (const button of buttons) {
+      const rect = button.getBoundingClientRect();
+      if (
+        x >= rect.left &&
+        x <= rect.right &&
+        y >= rect.top &&
+        y <= rect.bottom
+      ) {
+        // Check if button is in cooldown
+        const lastClick = parseInt(button.dataset.lastClick || '0');
+        if (now - lastClick < CLICK_COOLDOWN) {
+          return null; // Button is in cooldown
+        }
+        return button;
+      }
+    }
+    return null;
+  };
+
   return (
     <div className="writing-platform">
       <div className="controls-container">
@@ -1011,6 +1141,7 @@ const WritingPlatform = () => {
             totalPages={pages.length}
             onPageChange={switchPage}
             onAddPage={addNewPage}
+            onDeletePage={() => setIsDeletePageDialogOpen(true)}
           />
         </div>
 
@@ -1078,6 +1209,11 @@ const WritingPlatform = () => {
         onSave={handleNameSave}
         defaultValue={drawingName}
         existingNames={JSON.parse(localStorage.getItem('drawings') || '[]').map(d => d.name)}
+      />
+      <DeletePageDialog
+        isOpen={isDeletePageDialogOpen}
+        onClose={() => setIsDeletePageDialogOpen(false)}
+        onConfirm={deletePage}
       />
     </div>
   );
