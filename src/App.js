@@ -53,8 +53,13 @@ const GalleryPage = () => {
     setDrawings(newDrawings);
   };
 
-  const openDrawing = (dataUrl, index) => {
-    localStorage.setItem('currentDrawing', dataUrl);
+  const openDrawing = (drawing, index) => {
+    if (drawing.pages) {
+      localStorage.setItem('currentPages', JSON.stringify(drawing.pages));
+    } else {
+      // Handle legacy single-page drawings
+      localStorage.setItem('currentPages', JSON.stringify([drawing.dataUrl]));
+    }
     localStorage.setItem('editingIndex', index.toString());
     window.location.href = '/write';
   };
@@ -92,9 +97,9 @@ const GalleryPage = () => {
           drawings.map((drawing, index) => (
             <div key={index} className="drawing-card">
               <img
-                src={drawing.dataUrl}
+                src={drawing.pages ? drawing.pages[0] : drawing.dataUrl}
                 alt={drawing.name || `Drawing ${index + 1}`}
-                onClick={() => openDrawing(drawing.dataUrl, index)}
+                onClick={() => openDrawing(drawing, index)}
                 style={{ cursor: 'pointer' }}
               />
               <div className="drawing-info">
@@ -104,7 +109,7 @@ const GalleryPage = () => {
                 </div>
                 <div className="drawing-actions">
                   <button
-                    onClick={() => openDrawing(drawing.dataUrl, index)}
+                    onClick={() => openDrawing(drawing, index)}
                     className="edit-button"
                   >
                     Edit
@@ -243,6 +248,38 @@ const NewDrawingDialog = ({ isOpen, onClose, onSelectType }) => {
   );
 };
 
+// Add PageNavigation component
+const PageNavigation = ({ currentPage, totalPages, onPageChange, onAddPage }) => {
+  return (
+    <div className="page-navigation">
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 0}
+        className="page-nav-button"
+      >
+        <span className="button-icon">◀️</span>
+      </button>
+      <span className="page-indicator">
+        Page {currentPage + 1} of {totalPages}
+      </span>
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages - 1}
+        className="page-nav-button"
+      >
+        <span className="button-icon">▶️</span>
+      </button>
+      <button
+        onClick={onAddPage}
+        className="page-nav-button add-page"
+      >
+        <span className="button-icon">📄</span>
+        Add Page
+      </button>
+    </div>
+  );
+};
+
 // Writing Platform Component
 const WritingPlatform = () => {
   const webcamRef = useRef(null);
@@ -261,6 +298,8 @@ const WritingPlatform = () => {
   const MODE_NEUTRAL_TIMEOUT = 100; // Time in ms required in neutral state
   const lastModeChangeRef = useRef(0);
   const neutralTimeoutRef = useRef(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pages, setPages] = useState([{ dataUrl: null, canvas: null }]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -293,8 +332,8 @@ const WritingPlatform = () => {
       };
       img.src = backgroundImage;
     } else {
-      // Check for saved drawing to restore
-      const savedDrawing = localStorage.getItem('currentDrawing');
+      // Check for saved pages to restore
+      const savedPages = localStorage.getItem('currentPages');
       const editingIndex = localStorage.getItem('editingIndex');
 
       // Load existing drawing name if editing
@@ -306,17 +345,19 @@ const WritingPlatform = () => {
         }
       }
 
-      if (savedDrawing) {
+      if (savedPages) {
+        const pages = JSON.parse(savedPages);
+        setPages(pages.map(dataUrl => ({ dataUrl, canvas: null })));
+
+        // Load first page
         const img = new Image();
         img.onload = () => {
-          // Clear canvas first
           context.fillStyle = 'white';
           context.fillRect(0, 0, canvas.width, canvas.height);
-          // Draw the saved image
           context.drawImage(img, 0, 0);
-          localStorage.removeItem('currentDrawing');
+          localStorage.removeItem('currentPages');
         };
-        img.src = savedDrawing;
+        img.src = pages[0];
       } else {
         // Initial canvas setup
         context.fillStyle = 'white';
@@ -542,28 +583,58 @@ const WritingPlatform = () => {
     }
   };
 
-  const saveDrawing = () => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width;
-      tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext('2d');
+  const switchPage = (pageIndex) => {
+    // Save current page
+    const currentCanvas = canvasRef.current;
+    const currentPages = [...pages];
+    currentPages[currentPage] = {
+      dataUrl: currentCanvas.toDataURL(),
+      canvas: currentCanvas
+    };
 
-      tempCtx.fillStyle = 'white';
-      tempCtx.fillRect(0, 0, canvas.width, canvas.height);
-      tempCtx.drawImage(canvas, 0, 0);
-      const dataUrl = tempCanvas.toDataURL('image/png');
+    // Load target page
+    if (pageIndex >= 0 && pageIndex < currentPages.length) {
+      const ctx = canvasCtxRef.current;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, currentCanvas.width, currentCanvas.height);
 
-      // If we already have a name, save directly and close
-      if (drawingName) {
-        saveAndClose(dataUrl, drawingName);
-      } else {
-        // No name yet, prompt for one
-        localStorage.setItem('tempDrawing', dataUrl);
-        setIsNaming(true);
-        localStorage.setItem('isSaving', 'true');
+      if (currentPages[pageIndex].dataUrl) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0);
+        };
+        img.src = currentPages[pageIndex].dataUrl;
       }
+
+      setPages(currentPages);
+      setCurrentPage(pageIndex);
+    }
+  };
+
+  const addNewPage = () => {
+    setPages([...pages, { dataUrl: null, canvas: null }]);
+    switchPage(pages.length);
+  };
+
+  const saveDrawing = () => {
+    // Save current page first
+    const currentCanvas = canvasRef.current;
+    const currentPages = [...pages];
+    currentPages[currentPage] = {
+      dataUrl: currentCanvas.toDataURL(),
+      canvas: currentCanvas
+    };
+    setPages(currentPages);
+
+    // If we already have a name, save directly and close
+    if (drawingName) {
+      saveAndClose(currentPages.map(p => p.dataUrl), drawingName);
+    } else {
+      // No name yet, prompt for one
+      localStorage.setItem('tempPages', JSON.stringify(currentPages.map(p => p.dataUrl)));
+      setIsNaming(true);
+      localStorage.setItem('isSaving', 'true');
     }
   };
 
@@ -580,6 +651,13 @@ const WritingPlatform = () => {
         }
       }
 
+      // Save current page first
+      const currentPages = [...pages];
+      currentPages[currentPage] = {
+        dataUrl: canvas.toDataURL(),
+        canvas: canvas
+      };
+
       // Store current canvas state
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = canvas.width;
@@ -590,51 +668,45 @@ const WritingPlatform = () => {
       tempCtx.fillRect(0, 0, canvas.width, canvas.height);
       tempCtx.drawImage(canvas, 0, 0);
 
-      localStorage.setItem('tempDrawing', tempCanvas.toDataURL('image/png'));
+      localStorage.setItem('tempPages', JSON.stringify(currentPages.map(p => p.dataUrl)));
       setIsNaming(true);
       localStorage.removeItem('isSaving'); // Clear save flag
     }
   };
 
-  const saveAndClose = (dataUrl, name) => {
+  const saveAndClose = (pageDataUrls, name) => {
     const drawings = JSON.parse(localStorage.getItem('drawings') || '[]');
     const editingIndex = localStorage.getItem('editingIndex');
+
+    const drawingData = {
+      name,
+      pages: pageDataUrls,
+      timestamp: Date.now()
+    };
 
     if (editingIndex !== null && editingIndex !== 'null') {
       const index = parseInt(editingIndex);
       if (index >= 0 && index < drawings.length) {
-        drawings[index] = {
-          dataUrl,
-          name,
-          timestamp: Date.now()
-        };
+        drawings[index] = drawingData;
       }
     } else {
-      drawings.push({
-        dataUrl,
-        name,
-        timestamp: Date.now()
-      });
+      drawings.push(drawingData);
     }
 
     localStorage.setItem('drawings', JSON.stringify(drawings));
     localStorage.removeItem('editingIndex');
-    localStorage.removeItem('tempDrawing');
-
-    // Dispatch storage event to notify other components
-    window.dispatchEvent(new Event('storage'));
-
+    localStorage.removeItem('tempPages');
     window.location.href = '/gallery';
   };
 
   const handleNameSave = (name) => {
     setIsNaming(false); // Close the dialog
     const isSaving = localStorage.getItem('isSaving');
-    const dataUrl = localStorage.getItem('tempDrawing');
+    const dataUrls = localStorage.getItem('tempPages');
 
     if (isSaving) {
       // If we're saving, save and close
-      saveAndClose(dataUrl, name);
+      saveAndClose(JSON.parse(dataUrls), name);
       localStorage.removeItem('isSaving');
     } else {
       // If we're just naming, update the name and stay on the page
@@ -645,6 +717,12 @@ const WritingPlatform = () => {
   return (
     <div className="writing-platform">
       <div className="controls-container">
+        <PageNavigation
+          currentPage={currentPage}
+          totalPages={pages.length}
+          onPageChange={switchPage}
+          onAddPage={addNewPage}
+        />
         <button onClick={clearCanvas} className="control-button clear-button">
           <span className="button-icon">🗑️</span>
           Clear Canvas

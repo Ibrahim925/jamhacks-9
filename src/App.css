@@ -614,3 +614,45 @@ body {
 .option-button .button-icon {
   font-size: 1.4rem;
 }
+
+.page-navigation {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: 1rem;
+}
+
+.page-nav-button {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.page-nav-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-indicator {
+  font-size: 0.9rem;
+  color: #64748b;
+  min-width: 100px;
+  text-align: center;
+}
+
+.add-page {
+  background: #f8fafc;
+}
+
+.add-page:hover {
+  background: #f1f5f9;
+}
