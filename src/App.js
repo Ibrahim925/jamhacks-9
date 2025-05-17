@@ -418,16 +418,38 @@ const WritingPlatform = () => {
   const [pages, setPages] = useState([{ dataUrl: null, canvas: null }]);
   const strokesRef = useRef([]); // Store all strokes
   const currentStrokeRef = useRef(null); // Store current stroke points
+  const backgroundImageRef = useRef(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
 
-    // Function to redraw all strokes
+    // Function to redraw canvas
     const redrawCanvas = () => {
+      // Clear canvas
       context.fillStyle = 'white';
       context.fillRect(0, 0, canvas.width, canvas.height);
 
+      // Draw background image if exists
+      if (backgroundImageRef.current) {
+        const img = backgroundImageRef.current;
+        const scale = Math.min(
+          canvas.width / img.width,
+          canvas.height / img.height
+        );
+        const x = (canvas.width - img.width * scale) / 2;
+        const y = (canvas.height - img.height * scale) / 2;
+
+        context.drawImage(
+          img,
+          x,
+          y,
+          img.width * scale,
+          img.height * scale
+        );
+      }
+
+      // Draw strokes on top
       strokesRef.current.forEach(stroke => {
         context.beginPath();
         context.strokeStyle = 'black';
@@ -486,72 +508,24 @@ const WritingPlatform = () => {
       return false;
     };
 
-    // Check for background image
+    // Load background image if exists
     const backgroundImage = localStorage.getItem('backgroundImage');
     if (backgroundImage) {
       const img = new Image();
       img.onload = () => {
-        context.fillStyle = 'white';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Calculate dimensions to maintain aspect ratio
-        const scale = Math.min(
-          canvas.width / img.width,
-          canvas.height / img.height
-        );
-        const x = (canvas.width - img.width * scale) / 2;
-        const y = (canvas.height - img.height * scale) / 2;
-
-        context.drawImage(
-          img,
-          x,
-          y,
-          img.width * scale,
-          img.height * scale
-        );
+        backgroundImageRef.current = img;
+        redrawCanvas();
         localStorage.removeItem('backgroundImage');
       };
       img.src = backgroundImage;
-    } else {
-      // Check for saved pages to restore
-      const savedPages = localStorage.getItem('currentPages');
-      const editingIndex = localStorage.getItem('editingIndex');
-
-      // Load existing drawing name if editing
-      if (editingIndex !== null && editingIndex !== 'null') {
-        const drawings = JSON.parse(localStorage.getItem('drawings') || '[]');
-        const index = parseInt(editingIndex);
-        if (index >= 0 && index < drawings.length) {
-          setDrawingName(drawings[index].name || '');
-        }
-      }
-
-      if (savedPages) {
-        const pages = JSON.parse(savedPages);
-        setPages(pages.map(dataUrl => ({ dataUrl, canvas: null })));
-
-        // Load first page
-        const img = new Image();
-        img.onload = () => {
-          context.fillStyle = 'white';
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          context.drawImage(img, 0, 0);
-          localStorage.removeItem('currentPages');
-        };
-        img.src = pages[0];
-      } else {
-        // Initial canvas setup
-        context.fillStyle = 'white';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-      }
     }
 
-    context.strokeStyle = 'black';
-    context.lineWidth = 8;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-
-    canvasCtxRef.current = context;
+    // Make redrawCanvas and isPointNearStroke available to other functions
+    canvasCtxRef.current = {
+      ...context,
+      redrawCanvas,
+      isPointNearStroke
+    };
 
     async function initializeHandLandmarker() {
       const vision = await FilesetResolver.forVisionTasks(
@@ -713,9 +687,9 @@ const WritingPlatform = () => {
         if (newMode === 'erase') {
           // Check if eraser touches any stroke
           strokesRef.current = strokesRef.current.filter(stroke =>
-            !isPointNearStroke(x, y, stroke)
+            !canvasCtxRef.current.isPointNearStroke(x, y, stroke)
           );
-          redrawCanvas();
+          canvasCtxRef.current.redrawCanvas();
         } else {
           // Normal drawing
           currentStrokeRef.current.push({ x, y });
@@ -767,16 +741,41 @@ const WritingPlatform = () => {
     };
   }, []);
 
+  useEffect(() => {
+    // Near the start of the useEffect
+    const loadExistingDrawing = () => {
+      const editingIndex = localStorage.getItem('editingIndex');
+      if (editingIndex !== null && editingIndex !== 'null') {
+        const drawings = JSON.parse(localStorage.getItem('drawings') || '[]');
+        const index = parseInt(editingIndex);
+        if (index >= 0 && index < drawings.length) {
+          const drawing = drawings[index];
+          // Load first page as background
+          if (drawing.pages[0]) {
+            const img = new Image();
+            img.onload = () => {
+              backgroundImageRef.current = img;
+              canvasCtxRef.current.redrawCanvas();
+            };
+            img.src = drawing.pages[0];
+          }
+          // Set up pages
+          setPages(drawing.pages.map(dataUrl => ({
+            dataUrl,
+            canvas: null,
+            strokes: []
+          })));
+        }
+      }
+    };
+
+    // Call after setting up canvas
+    loadExistingDrawing();
+  }, []);
+
   const clearCanvas = () => {
-    const ctx = canvasCtxRef.current;
-    if (ctx) {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 8;
-      isDrawingRef.current = false;
-    }
+    strokesRef.current = []; // Only clear strokes
+    canvasCtxRef.current?.redrawCanvas(); // Redraw with background but no strokes
   };
 
   const switchPage = (pageIndex) => {
@@ -785,22 +784,30 @@ const WritingPlatform = () => {
     const currentPages = [...pages];
     currentPages[currentPage] = {
       dataUrl: currentCanvas.toDataURL(),
-      canvas: currentCanvas
+      canvas: currentCanvas,
+      strokes: strokesRef.current // Save strokes with the page
     };
 
     // Load target page
     if (pageIndex >= 0 && pageIndex < currentPages.length) {
-      const ctx = canvasCtxRef.current;
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, currentCanvas.width, currentCanvas.height);
+      // Reset strokes for new page
+      strokesRef.current = currentPages[pageIndex].strokes || [];
 
       if (currentPages[pageIndex].dataUrl) {
         const img = new Image();
         img.onload = () => {
-          ctx.drawImage(img, 0, 0);
+          // Store as background if it's the first load
+          if (!backgroundImageRef.current) {
+            backgroundImageRef.current = img;
+          }
+          // Redraw everything
+          canvasCtxRef.current.redrawCanvas();
         };
         img.src = currentPages[pageIndex].dataUrl;
+      } else {
+        // Clear canvas for new page
+        canvasCtxRef.current.fillStyle = 'white';
+        canvasCtxRef.current.fillRect(0, 0, currentCanvas.width, currentCanvas.height);
       }
 
       setPages(currentPages);
