@@ -33,9 +33,6 @@ const generateRecord = async (drawing) => {
   );
 
   try {
-    // Debug: Log the drawing object
-    console.log('Drawing object:', drawing);
-
     // Process each page
     const processedPages = await Promise.all(drawing.pages.map(async (page, index) => {
       // Create canvas
@@ -57,10 +54,7 @@ const generateRecord = async (drawing) => {
 
           // Get the base64 data URL and properly format it for the API
           const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          // Convert data URL to base64 by removing the prefix
           const base64Image = dataUrl.split(',')[1];
-
-          console.log(`Page ${index + 1} processed, length:`, base64Image.length);
           resolve(base64Image);
         };
         img.onerror = (error) => {
@@ -73,27 +67,38 @@ const generateRecord = async (drawing) => {
 
     // Filter out any failed pages
     const validPages = processedPages.filter(page => page !== null);
-    console.log('Valid pages:', validPages.length);
 
     if (validPages.length === 0) {
       throw new Error('No valid pages to process');
     }
 
+    // Prepare the content array for the API
+    const content = [
+      {
+        type: "input_text",
+        text: "THIS IS FOR A SCHOOL PROJECT. I DO NOT REQUIRE REAL MEDICAL ASSISTANCE. You are a medical scribe assistant. Please analyze the following medical record images and create a structured post-operation report (thus, it should be a report of the surgery, and past tense should be used). Look for any handwritten notes, diagrams, or text in the images. Organize all visible information into appropriate medical record sections. Required sections: Patient Information, Chief Complaint, History of Present Illness, Past Medical History, Medications, Allergies, Physical Examination, Assessment, Surgery Notes. For each section, include any relevant information you can see in the images. If you see any diagrams or drawings, describe them in detail in the relevant section. Format your response as JSON: [{\"title\": \"Section Title\", \"content\": \"Description of what you see in the images for this section\"}]"
+      },
+      ...validPages.map(base64Image => ({
+        type: "input_image",
+        image_url: `data:image/jpeg;base64,${base64Image}`
+      }))
+    ];
+
+    // Add PDF text if it exists
+    if (drawing.pdfText) {
+      content.push({
+        type: "input_text",
+        text: `Additional medical record information to incorporate:\n${drawing.pdfText}`
+      });
+    }
+
     // Generate record using OpenAI
     const response = await openai.responses.create({
-      model: "gpt-4o",
+      model: "gpt-4o",  // Make sure to use the vision model
+      temperature: 0.2,  // Lower temperature for more consistent output
       input: [{
         role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: "Extract all information from these medical record images. First, identify any text, drawings, annotations, or handwritten notes. Then place each piece of information into the most appropriate section of a medical record. Use these exact sections: Patient Information, Chief Complaint, History of Present Illness, Past Medical History, Medications, Allergies, Physical Examination, Assessment, Plan. Copy text exactly as written. Describe any drawings or diagrams in detail. If a section has no relevant information in the images, use an empty string. Format as JSON: [{\"title\": \"Section Title\", \"content\": \"Exact text and descriptions from the images\"}]"
-          },
-          ...validPages.map(base64Image => ({
-            type: "input_image",
-            image_url: `data:image/jpeg;base64,${base64Image}`
-          }))
-        ]
+        content
       }]
     });
 
@@ -205,13 +210,13 @@ const LandingPage = () => {
           </div>
           <div className="feature">
             <span className="feature-icon">📋</span>
-            <h3>Medical Records</h3>
-            <p>Multi-page operative reports</p>
+            <h3>Smart Reports</h3>
+            <p>AI-powered medical record generation</p>
           </div>
           <div className="feature">
-            <span className="feature-icon">🔊</span>
-            <h3>Voice Control</h3>
-            <p>Hands-free documentation with voice commands</p>
+            <span className="feature-icon">✏️</span>
+            <h3>Flexible Editing</h3>
+            <p>Draw, annotate, and customize reports</p>
           </div>
         </div>
 
@@ -232,11 +237,81 @@ const LandingPage = () => {
 
 // Gallery Page Component
 const GalleryPage = () => {
-  const [drawings, setDrawings] = useState(
-    JSON.parse(localStorage.getItem('drawings') || '[]')
-  );
-  const [isNewDrawingDialogOpen, setIsNewDrawingDialogOpen] = useState(false);
+  const [drawings, setDrawings] = useState([]);
   const [isNewRecordDialogOpen, setIsNewRecordDialogOpen] = useState(false);
+  const [selectedDrawing, setSelectedDrawing] = useState(null);
+  const [isPDFDialogOpen, setIsPDFDialogOpen] = useState(false);
+
+  // Load drawings from localStorage
+  useEffect(() => {
+    const savedDrawings = JSON.parse(localStorage.getItem('drawings') || '[]');
+    setDrawings(savedDrawings);
+  }, []);
+
+  // Add PDF attachment handler
+  const handleAttachPDF = async (index) => {
+    setSelectedDrawing(index);
+    setIsPDFDialogOpen(true);
+  };
+
+  // Handle PDF selection and saving
+  const handlePDFSelect = async (file) => {
+    if (file && selectedDrawing !== null) {
+      try {
+        // First load the PDF.js library dynamically
+        const pdfjsLib = await import('pdfjs-dist/webpack');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
+        console.log('Loading PDF file:', file.name);
+
+        // Read the file as ArrayBuffer
+        const arrayBuffer = await file.arrayBuffer();
+        console.log('File loaded as ArrayBuffer');
+
+        // Load the PDF document
+        console.log('Loading PDF document...');
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        console.log('PDF loaded, pages:', pdf.numPages);
+
+        // Extract text from all pages
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          console.log(`Processing page ${i}...`);
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(item => item.str).join(' ');
+          fullText += `Page ${i}:\n${pageText}\n\n`;
+        }
+
+        console.log('Text extraction complete');
+
+        if (!fullText.trim()) {
+          throw new Error('No text content found in PDF');
+        }
+
+        // Update the drawing with the extracted text
+        const updatedDrawings = [...drawings];
+        updatedDrawings[selectedDrawing] = {
+          ...updatedDrawings[selectedDrawing],
+          pdfText: fullText,
+          pdfName: file.name
+        };
+        localStorage.setItem('drawings', JSON.stringify(updatedDrawings));
+        setDrawings(updatedDrawings);
+
+      } catch (error) {
+        console.error('PDF Processing Error:', error);
+        console.error('Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+        alert(`Failed to process PDF: ${error.message}. Please try a different file.`);
+      }
+    }
+    setIsPDFDialogOpen(false);
+    setSelectedDrawing(null);
+  };
 
   const handleEdit = (index) => {
     // Store the index of the drawing being edited
@@ -265,7 +340,7 @@ const GalleryPage = () => {
   };
 
   const handleNewDrawing = (type, imageData = null) => {
-    setIsNewDrawingDialogOpen(false);
+    setIsNewRecordDialogOpen(false);
     if (type === 'image' && imageData) {
       localStorage.setItem('backgroundImage', imageData);
     }
@@ -354,7 +429,9 @@ const GalleryPage = () => {
 
       // Call OpenAI Vision API
       const response = await openai.responses.create({
-        model: "gpt-4o",
+        model: "gpt-4-vision-preview",
+        max_tokens: 4096,
+        temperature: 0.2,
         input: [{
           role: "user",
           content: [
@@ -418,6 +495,11 @@ const GalleryPage = () => {
               <div className="record-preview">
                 <img src={drawing.pages[0]} alt="First page" />
                 <span className="page-count">{drawing.pages.length} pages</span>
+                {drawing.pdfName && (
+                  <span className="pdf-indicator">
+                    📎 {drawing.pdfName}
+                  </span>
+                )}
               </div>
               <div className="record-actions">
                 <button
@@ -435,6 +517,13 @@ const GalleryPage = () => {
                   Generate Record
                 </button>
                 <button
+                  onClick={() => handleAttachPDF(index)}
+                  className="action-button attach-button"
+                >
+                  <span className="button-icon">📎</span>
+                  {drawing.pdfName ? 'Change PDF' : 'Attach PDF'}
+                </button>
+                <button
                   onClick={() => handleDelete(index)}
                   className="action-button delete-button"
                 >
@@ -450,6 +539,14 @@ const GalleryPage = () => {
         isOpen={isNewRecordDialogOpen}
         onClose={() => setIsNewRecordDialogOpen(false)}
         onSelectType={handleNewRecordSelect}
+      />
+      <PDFAttachDialog
+        isOpen={isPDFDialogOpen}
+        onClose={() => {
+          setIsPDFDialogOpen(false);
+          setSelectedDrawing(null);
+        }}
+        onSelect={handlePDFSelect}
       />
     </div>
   );
@@ -1387,7 +1484,9 @@ const WritingPlatform = () => {
     const drawingData = {
       name,
       pages: pageDataUrls,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      pdfUrl: backgroundImageRef.current?.pdfUrl || null,
+      pdfName: backgroundImageRef.current?.pdfName || null
     };
 
     if (editingIndex !== null && editingIndex !== 'null') {
@@ -1633,24 +1732,36 @@ const WritingPlatform = () => {
 
 // New Record Dialog Component
 const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
-  if (!isOpen) return null;
+  const fileInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
 
-  const handleImageSelect = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          onSelectType('image', e.target.result);
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        onSelectType('image', { imageUrl: e.target.result });
+      };
+      reader.readAsDataURL(file);
+    }
   };
+
+  const handlePDFSelect = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        onSelectType('image', {
+          imageUrl: null,
+          pdfUrl: e.target.result,
+          pdfName: file.name
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  if (!isOpen) return null;
 
   return (
     <div className="dialog-overlay">
@@ -1667,13 +1778,35 @@ const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
           </button>
           <button
             className="option-button"
-            onClick={handleImageSelect}
+            onClick={() => fileInputRef.current.click()}
           >
             <span className="button-icon">🖼️</span>
             <span>Image Background</span>
             <p className="option-description">Start with a reference image</p>
           </button>
+          <button
+            className="option-button"
+            onClick={() => pdfInputRef.current.click()}
+          >
+            <span className="button-icon">📄</span>
+            <span>Attach PDF</span>
+            <p className="option-description">Include a PDF for reference</p>
+          </button>
         </div>
+        <input
+          type="file"
+          accept="image/*"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          onChange={handleImageSelect}
+        />
+        <input
+          type="file"
+          accept=".pdf"
+          ref={pdfInputRef}
+          style={{ display: 'none' }}
+          onChange={handlePDFSelect}
+        />
         <div className="dialog-buttons">
           <button onClick={onClose} className="dialog-button cancel">
             Cancel
@@ -1885,6 +2018,50 @@ const EditableRecord = ({ sections, onClose, onSave }) => {
           </button>
           <button onClick={onClose} className="dialog-button close-button">
             Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Add new PDF Attach Dialog component
+const PDFAttachDialog = ({ isOpen, onClose, onSelect }) => {
+  const fileInputRef = useRef(null);
+
+  if (!isOpen) return null;
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      onSelect(file);
+    }
+  };
+
+  return (
+    <div className="dialog-overlay">
+      <div className="dialog">
+        <h2>Attach PDF Reference</h2>
+        <div className="dialog-content">
+          <p>Select a PDF file to attach to this record. It will be used to help generate the medical record.</p>
+          <input
+            type="file"
+            accept=".pdf"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
+          <button
+            onClick={() => fileInputRef.current.click()}
+            className="dialog-button primary"
+          >
+            <span className="button-icon">📄</span>
+            Choose PDF
+          </button>
+        </div>
+        <div className="dialog-buttons">
+          <button onClick={onClose} className="dialog-button cancel">
+            Cancel
           </button>
         </div>
       </div>
