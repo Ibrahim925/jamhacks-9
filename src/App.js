@@ -1733,7 +1733,6 @@ const WritingPlatform = () => {
 // New Record Dialog Component
 const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
   const fileInputRef = useRef(null);
-  const pdfInputRef = useRef(null);
 
   const handleImageSelect = async (e) => {
     const file = e.target.files[0];
@@ -1741,21 +1740,6 @@ const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         onSelectType('image', { imageUrl: e.target.result });
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handlePDFSelect = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        onSelectType('image', {
-          imageUrl: null,
-          pdfUrl: e.target.result,
-          pdfName: file.name
-        });
       };
       reader.readAsDataURL(file);
     }
@@ -1784,14 +1768,6 @@ const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
             <span>Image Background</span>
             <p className="option-description">Start with a reference image</p>
           </button>
-          <button
-            className="option-button"
-            onClick={() => pdfInputRef.current.click()}
-          >
-            <span className="button-icon">📄</span>
-            <span>Attach PDF</span>
-            <p className="option-description">Include a PDF for reference</p>
-          </button>
         </div>
         <input
           type="file"
@@ -1799,13 +1775,6 @@ const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
           ref={fileInputRef}
           style={{ display: 'none' }}
           onChange={handleImageSelect}
-        />
-        <input
-          type="file"
-          accept=".pdf"
-          ref={pdfInputRef}
-          style={{ display: 'none' }}
-          onChange={handlePDFSelect}
         />
         <div className="dialog-buttons">
           <button onClick={onClose} className="dialog-button cancel">
@@ -1874,9 +1843,37 @@ const EditableRecord = ({ sections, onClose, onSave }) => {
   return (
     <div className="dialog-overlay">
       <div className="dialog record-dialog">
-        <h2>Generated Medical Record</h2>
+        <div className="record-header">
+          <h2>Generated Medical Record</h2>
+          <div className="record-actions">
+            <button
+              onClick={handleGeneratePDF}
+              className={`action-button print-button ${isGenerating ? 'loading' : ''}`}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <>
+                  <span className="loading-spinner"></span>
+                  Generating PDF...
+                </>
+              ) : (
+                <>
+                  <span className="button-icon">🖨️</span>
+                  Print PDF
+                </>
+              )}
+            </button>
+            <button onClick={() => onSave(editableSections)} className="action-button save-button">
+              <span className="button-icon">💾</span>
+              Save Changes
+            </button>
+            <button onClick={onClose} className="action-button close-button">
+              <span className="button-icon">✖️</span>
+              Close
+            </button>
+          </div>
+        </div>
 
-        {/* Editable content */}
         <div className="record-content editable">
           {editableSections.length === 0 ? (
             <div className="empty-record">
@@ -1993,32 +1990,6 @@ const EditableRecord = ({ sections, onClose, onSave }) => {
               <p>Page 1 of 1</p>
             </div>
           </div>
-        </div>
-
-        <div className="dialog-buttons">
-          <button
-            onClick={handleGeneratePDF}
-            className={`dialog-button print-button ${isGenerating ? 'loading' : ''}`}
-            disabled={isGenerating}
-          >
-            {isGenerating ? (
-              <>
-                <span className="loading-spinner"></span>
-                Generating PDF...
-              </>
-            ) : (
-              <>
-                <span className="button-icon">🖨️</span>
-                Print PDF
-              </>
-            )}
-          </button>
-          <button onClick={() => onSave(editableSections)} className="dialog-button save-button">
-            Save Changes
-          </button>
-          <button onClick={onClose} className="dialog-button close-button">
-            Close
-          </button>
         </div>
       </div>
     </div>
