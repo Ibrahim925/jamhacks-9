@@ -4,12 +4,185 @@ import Webcam from 'react-webcam';
 import { HandLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import OpenAI from 'openai';
 import './App.css';
+import ReactDOM from 'react-dom';
+import { usePDF } from 'react-to-pdf';
 
 // Add this constant near the top of the file
 const openai = new OpenAI({
   apiKey: process.env.REACT_APP_OPENAI_API_KEY,
   dangerouslyAllowBrowser: true // Note: In production, you should use a backend
 });
+
+// Add this before the component definitions
+const generateRecord = async (drawing) => {
+  const recordDialog = document.createElement('div');
+  recordDialog.id = 'record-dialog-container';
+  document.body.appendChild(recordDialog);
+
+  // Show loading dialog first
+  ReactDOM.render(
+    <div className="dialog-overlay">
+      <div className="dialog loading-dialog">
+        <div className="loading-content">
+          <div className="loading-spinner large"></div>
+          <p>Analyzing medical record...</p>
+        </div>
+      </div>
+    </div>,
+    recordDialog
+  );
+
+  try {
+    // Debug: Log the drawing object
+    console.log('Drawing object:', drawing);
+
+    // Process each page
+    const processedPages = await Promise.all(drawing.pages.map(async (page, index) => {
+      // Create canvas
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 600;
+      const ctx = canvas.getContext('2d');
+
+      // Create image and wait for it to load
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          // Fill with white background
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Draw the image
+          ctx.drawImage(img, 0, 0, 800, 600);
+
+          // Get the base64 data URL and properly format it for the API
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          // Convert data URL to base64 by removing the prefix
+          const base64Image = dataUrl.split(',')[1];
+
+          console.log(`Page ${index + 1} processed, length:`, base64Image.length);
+          resolve(base64Image);
+        };
+        img.onerror = (error) => {
+          console.error('Error loading image:', error);
+          resolve(null);
+        };
+        img.src = page;
+      });
+    }));
+
+    // Filter out any failed pages
+    const validPages = processedPages.filter(page => page !== null);
+    console.log('Valid pages:', validPages.length);
+
+    if (validPages.length === 0) {
+      throw new Error('No valid pages to process');
+    }
+
+    // Generate record using OpenAI
+    const response = await openai.responses.create({
+      model: "gpt-4o",
+      input: [{
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: "Extract all information from these medical record images. First, identify any text, drawings, annotations, or handwritten notes. Then place each piece of information into the most appropriate section of a medical record. Use these exact sections: Patient Information, Chief Complaint, History of Present Illness, Past Medical History, Medications, Allergies, Physical Examination, Assessment, Plan. Copy text exactly as written. Describe any drawings or diagrams in detail. If a section has no relevant information in the images, use an empty string. Format as JSON: [{\"title\": \"Section Title\", \"content\": \"Exact text and descriptions from the images\"}]"
+          },
+          ...validPages.map(base64Image => ({
+            type: "input_image",
+            image_url: `data:image/jpeg;base64,${base64Image}`
+          }))
+        ]
+      }]
+    });
+
+    // Parse response with minimal validation and ensure all required sections
+    let sections = [];
+    try {
+      let textToParse = response.output_text;
+      if (!textToParse.startsWith('[')) {
+        const start = textToParse.indexOf('[');
+        const end = textToParse.lastIndexOf(']');
+        if (start !== -1 && end !== -1) {
+          textToParse = textToParse.substring(start, end + 1);
+        }
+      }
+
+      sections = JSON.parse(textToParse);
+
+      // Ensure all required sections exist
+      const requiredSections = [
+        "Patient Information",
+        "Chief Complaint",
+        "History of Present Illness",
+        "Past Medical History",
+        "Medications",
+        "Allergies",
+        "Physical Examination",
+        "Assessment",
+        "Plan"
+      ];
+
+      // Add missing sections with empty content
+      requiredSections.forEach(title => {
+        if (!sections.find(s => s.title === title)) {
+          sections.push({ title, content: "" });
+        }
+      });
+
+      // Sort sections in standard order
+      sections.sort((a, b) => {
+        const aIndex = requiredSections.indexOf(a.title);
+        const bIndex = requiredSections.indexOf(b.title);
+        return aIndex - bIndex;
+      });
+
+    } catch (error) {
+      console.error('Error parsing GPT response:', error);
+      console.error('Raw response text:', response.output_text);
+      sections = [];
+    }
+
+    // Replace loading dialog with EditableRecord
+    ReactDOM.render(
+      <EditableRecord
+        sections={sections}
+        onClose={() => {
+          document.body.removeChild(recordDialog);
+        }}
+        onSave={(updatedSections) => {
+          document.body.removeChild(recordDialog);
+        }}
+      />,
+      recordDialog
+    );
+
+  } catch (error) {
+    console.error('Error generating record:', error);
+    console.error('Full error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+
+    ReactDOM.render(
+      <div className="dialog-overlay">
+        <div className="dialog error-dialog">
+          <h2>Error</h2>
+          <p>Failed to generate record: {error.message}</p>
+          <button
+            onClick={() => document.body.removeChild(recordDialog)}
+            className="dialog-button close-button"
+          >
+            Close
+          </button>
+        </div>
+      </div>,
+      recordDialog
+    );
+  }
+};
 
 // Landing Page Component
 const LandingPage = () => {
@@ -19,40 +192,37 @@ const LandingPage = () => {
         <div className="brand-header">
           <div className="logo-container">
             <span className="logo-icon">⚕️</span>
-            <h1>AirScribe</h1>
+            <h1 className="brand-title">Ori</h1>
           </div>
-          <p className="tagline">
-            Sterile documentation for the <span className="highlight">operating room</span>
-          </p>
+          <p className="brand-subtitle">Medical Documentation, Reimagined</p>
         </div>
-        <div className="features-grid">
-          <div className="feature-card">
+
+        <div className="features">
+          <div className="feature">
             <span className="feature-icon">🧤</span>
             <h3>Sterile Interface</h3>
             <p>Document without breaking sterility</p>
           </div>
-          <div className="feature-card">
+          <div className="feature">
             <span className="feature-icon">📋</span>
-            <h3>Surgical Notes</h3>
+            <h3>Medical Records</h3>
             <p>Multi-page operative reports</p>
           </div>
-          <div className="feature-card">
-            <span className="feature-icon">⚡</span>
-            <h3>Quick Access</h3>
-            <p>Instant gesture recognition</p>
-          </div>
-          <div className="feature-card">
-            <span className="feature-icon">🔒</span>
-            <h3>Secure Storage</h3>
-            <p>Safe local data storage</p>
+          <div className="feature">
+            <span className="feature-icon">🔊</span>
+            <h3>Voice Control</h3>
+            <p>Hands-free documentation with voice commands</p>
           </div>
         </div>
+
         <div className="landing-buttons">
           <Link to="/write" className="enter-button primary">
-            <span>🧑‍⚕️ Start Documentation</span>
+            <span className="button-icon">🧑‍⚕️</span>
+            Start Documentation
           </Link>
           <Link to="/gallery" className="enter-button secondary">
-            <span>📑 View Records</span>
+            <span className="button-icon">📑</span>
+            View Records
           </Link>
         </div>
       </div>
@@ -184,7 +354,7 @@ const GalleryPage = () => {
 
       // Call OpenAI Vision API
       const response = await openai.responses.create({
-        model: "gpt-4.1-mini",
+        model: "gpt-4o",
         input: [{
           role: "user",
           content: [
@@ -256,6 +426,13 @@ const GalleryPage = () => {
                 >
                   <span className="button-icon">✏️</span>
                   Edit Record
+                </button>
+                <button
+                  onClick={() => generateRecord(drawing)}
+                  className="action-button generate-button"
+                >
+                  <span className="button-icon">📝</span>
+                  Generate Record
                 </button>
                 <button
                   onClick={() => handleDelete(index)}
@@ -506,6 +683,10 @@ const WritingPlatform = () => {
   const [lastClickTime, setLastClickTime] = useState(0);
   const CLICK_COOLDOWN = 500; // Minimum time between clicks in ms
   const [isDeletePageDialogOpen, setIsDeletePageDialogOpen] = useState(false);
+  const { toPDF, targetRef } = usePDF({
+    filename: 'medical-record.pdf',
+    page: { margin: 20 }
+  });
 
   const deletePage = () => {
     if (pages.length <= 1) {
@@ -1322,6 +1503,47 @@ const WritingPlatform = () => {
     return null;
   };
 
+  // In the WritingPlatform component, add this function
+  const handleGenerateRecord = async () => {
+    // Create a drawing object from current state
+    const drawing = {
+      pages: pages.map(page => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 800;
+        canvas.height = 600;
+        const ctx = canvas.getContext('2d');
+
+        // Draw background if exists
+        if (page.backgroundUrl) {
+          const img = new Image();
+          img.src = page.backgroundUrl;
+          ctx.drawImage(img, 0, 0, 800, 600);
+        }
+
+        // Draw strokes
+        page.strokes.forEach(stroke => {
+          const smoothedPoints = averagePoints(stroke);
+          ctx.beginPath();
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 8;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          ctx.moveTo(smoothedPoints[0].x, smoothedPoints[0].y);
+          for (let i = 1; i < smoothedPoints.length; i++) {
+            ctx.lineTo(smoothedPoints[i].x, smoothedPoints[i].y);
+          }
+          ctx.stroke();
+        });
+
+        return canvas.toDataURL();
+      })
+    };
+
+    // Call the shared generateRecord function
+    await generateRecord(drawing);
+  };
+
   return (
     <div className="writing-platform">
       <div className="controls-container">
@@ -1455,6 +1677,214 @@ const NewRecordDialog = ({ isOpen, onClose, onSelectType }) => {
         <div className="dialog-buttons">
           <button onClick={onClose} className="dialog-button cancel">
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Add this new component
+const EditableRecord = ({ sections, onClose, onSave }) => {
+  const [editableSections, setEditableSections] = useState(sections);
+  const [newSectionIndex, setNewSectionIndex] = useState(null);
+  const [newSectionTitle, setNewSectionTitle] = useState('');
+  const [isAddingFirstSection, setIsAddingFirstSection] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const { toPDF, targetRef } = usePDF({
+    filename: 'medical-record.pdf',
+    page: { margin: 20 }
+  });
+
+  const handleSectionChange = (index, field, value) => {
+    const newSections = [...editableSections];
+    newSections[index][field] = value;
+    setEditableSections(newSections);
+  };
+
+  const addSection = (index) => {
+    if (newSectionTitle.trim()) {
+      const newSections = [...editableSections];
+      if (index === -1) { // Adding first section
+        newSections.push({
+          title: newSectionTitle,
+          content: ''
+        });
+      } else {
+        newSections.splice(index + 1, 0, {
+          title: newSectionTitle,
+          content: ''
+        });
+      }
+      setEditableSections(newSections);
+      setNewSectionIndex(null);
+      setNewSectionTitle('');
+      setIsAddingFirstSection(false);
+    }
+  };
+
+  const removeSection = (index) => {
+    const newSections = [...editableSections];
+    newSections.splice(index, 1);
+    setEditableSections(newSections);
+  };
+
+  const handleGeneratePDF = async () => {
+    setIsGenerating(true);
+    try {
+      await toPDF();
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <div className="dialog-overlay">
+      <div className="dialog record-dialog">
+        <h2>Generated Medical Record</h2>
+
+        {/* Editable content */}
+        <div className="record-content editable">
+          {editableSections.length === 0 ? (
+            <div className="empty-record">
+              <p>No sections found in the record.</p>
+              {isAddingFirstSection ? (
+                <div className="add-section-form">
+                  <input
+                    type="text"
+                    value={newSectionTitle}
+                    onChange={(e) => setNewSectionTitle(e.target.value)}
+                    placeholder="New Section Title"
+                    className="new-section-input"
+                  />
+                  <button onClick={() => addSection(-1)} className="add-section-button">
+                    Add
+                  </button>
+                  <button onClick={() => setIsAddingFirstSection(false)} className="cancel-button">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsAddingFirstSection(true)}
+                  className="add-section-button first-section"
+                >
+                  + Add First Section
+                </button>
+              )}
+            </div>
+          ) : (
+            editableSections.map((section, index) => (
+              <div key={index} className="record-section">
+                <div className="section-header">
+                  <input
+                    type="text"
+                    value={section.title}
+                    onChange={(e) => handleSectionChange(index, 'title', e.target.value)}
+                    className="section-title-input"
+                  />
+                  <button
+                    onClick={() => removeSection(index)}
+                    className="remove-section-button"
+                    title="Remove Section"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  value={section.content}
+                  onChange={(e) => handleSectionChange(index, 'content', e.target.value)}
+                  className="section-content-input"
+                />
+                {newSectionIndex === index ? (
+                  <div className="add-section-form">
+                    <input
+                      type="text"
+                      value={newSectionTitle}
+                      onChange={(e) => setNewSectionTitle(e.target.value)}
+                      placeholder="New Section Title"
+                      className="new-section-input"
+                    />
+                    <button onClick={() => addSection(index)} className="add-section-button">
+                      Add
+                    </button>
+                    <button onClick={() => setNewSectionIndex(null)} className="cancel-button">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setNewSectionIndex(index)}
+                    className="add-section-button"
+                  >
+                    + Add Section Below
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* PDF template - this is what gets converted to PDF */}
+        <div className="pdf-container" style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+          <div ref={targetRef} className="pdf-content">
+            <div className="pdf-header">
+              <div className="pdf-logo">
+                <span className="pdf-logo-icon">⚕️</span>
+                <span className="pdf-logo-text">Ori</span>
+              </div>
+              <div className="pdf-metadata">
+                <p>Generated: {new Date().toLocaleDateString()}</p>
+                <p>Record ID: {Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+              </div>
+            </div>
+            <div className="pdf-divider"></div>
+
+            <div className="pdf-body">
+              {editableSections.map((section, index) => (
+                <div key={index} className="pdf-section">
+                  <div className="pdf-section-header">
+                    {section.title}
+                  </div>
+                  <div className="pdf-section-content">
+                    {section.content.split('\n').map((line, i) => (
+                      <p key={i}>{line}</p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pdf-footer">
+              <p>Generated by Ori Medical Documentation System</p>
+              <p>Page 1 of 1</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="dialog-buttons">
+          <button
+            onClick={handleGeneratePDF}
+            className={`dialog-button print-button ${isGenerating ? 'loading' : ''}`}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <>
+                <span className="loading-spinner"></span>
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <span className="button-icon">🖨️</span>
+                Print PDF
+              </>
+            )}
+          </button>
+          <button onClick={() => onSave(editableSections)} className="dialog-button save-button">
+            Save Changes
+          </button>
+          <button onClick={onClose} className="dialog-button close-button">
+            Close
           </button>
         </div>
       </div>
